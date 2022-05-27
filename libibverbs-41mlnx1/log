@@ -1,0 +1,125 @@
+make[1]: Entering directory '/home/mingman/MPRUD/libibverbs-41mlnx1'
+ /usr/bin/mkdir -p '/usr/lib'
+ /bin/bash ./libtool   --mode=install /usr/bin/install -c   src/libibverbs.la '/usr/lib'
+libtool: install: /usr/bin/install -c src/.libs/libibverbs.so.1.0.0 /usr/lib/libibverbs.so.1.0.0
+libtool: install: (cd /usr/lib && { ln -s -f libibverbs.so.1.0.0 libibverbs.so.1 || { rm -f libibverbs.so.1 && ln -s libibverbs.so.1.0.0 libibverbs.so.1; }; })
+libtool: install: (cd /usr/lib && { ln -s -f libibverbs.so.1.0.0 libibverbs.so || { rm -f libibverbs.so && ln -s libibverbs.so.1.0.0 libibverbs.so; }; })
+libtool: install: /usr/bin/install -c src/.libs/libibverbs.lai /usr/lib/libibverbs.la
+libtool: install: /usr/bin/install -c src/.libs/libibverbs.a /usr/lib/libibverbs.a
+libtool: install: chmod 644 /usr/lib/libibverbs.a
+libtool: install: ranlib /usr/lib/libibverbs.a
+libtool: finish: PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin:/sbin" ldconfig -n /usr/lib
+----------------------------------------------------------------------
+Libraries have been installed in:
+   /usr/lib
+
+If you ever happen to want to link against installed libraries
+in a given directory, LIBDIR, you must either use libtool, and
+specify the full pathname of the library, or use the '-LLIBDIR'
+flag during linking and do at least one of the following:
+   - add LIBDIR to the 'LD_LIBRARY_PATH' environment variable
+     during execution
+   - add LIBDIR to the 'LD_RUN_PATH' environment variable
+     during linking
+   - use the '-Wl,-rpath -Wl,LIBDIR' linker flag
+   - have your system administrator add LIBDIR to '/etc/ld.so.conf'
+
+See any operating system documentation about shared libraries for
+more information, such as the ld(1) and ld.so(8) manual pages.
+----------------------------------------------------------------------
+ /usr/bin/mkdir -p '/usr/bin'
+  /bin/bash ./libtool   --mode=install /usr/bin/install -c examples/ibv_devices examples/ibv_devinfo examples/ibv_asyncwatch examples/ibv_rc_pingpong examples/ibv_uc_pingpong examples/ibv_ud_pingpong examples/ibv_srq_pingpong examples/ibv_xsrq_pingpong examples/ibv_cc_pingpong examples/ibv_task_pingpong examples/ibv_dcini examples/ibv_dctgt examples/ibv_umr examples/ibv_intf examples/ibv_polldcinfo '/usr/bin'
+libtool: install: /usr/bin/install -c examples/.libs/ibv_devices /usr/bin/ibv_devices
+libtool: install: /usr/bin/install -c examples/.libs/ibv_devinfo /usr/bin/ibv_devinfo
+libtool: install: /usr/bin/install -c examples/.libs/ibv_asyncwatch /usr/bin/ibv_asyncwatch
+libtool: install: /usr/bin/install -c examples/.libs/ibv_rc_pingpong /usr/bin/ibv_rc_pingpong
+libtool: install: /usr/bin/install -c examples/.libs/ibv_uc_pingpong /usr/bin/ibv_uc_pingpong
+libtool: install: /usr/bin/install -c examples/.libs/ibv_ud_pingpong /usr/bin/ibv_ud_pingpong
+libtool: install: /usr/bin/install -c examples/.libs/ibv_srq_pingpong /usr/bin/ibv_srq_pingpong
+libtool: install: /usr/bin/install -c examples/.libs/ibv_xsrq_pingpong /usr/bin/ibv_xsrq_pingpong
+libtool: install: /usr/bin/install -c examples/.libs/ibv_cc_pingpong /usr/bin/ibv_cc_pingpong
+libtool: install: /usr/bin/install -c examples/.libs/ibv_task_pingpong /usr/bin/ibv_task_pingpong
+libtool: install: /usr/bin/install -c examples/.libs/ibv_dcini /usr/bin/ibv_dcini
+libtool: install: /usr/bin/install -c examples/.libs/ibv_dctgt /usr/bin/ibv_dctgt
+libtool: install: /usr/bin/install -c examples/.libs/ibv_umr /usr/bin/ibv_umr
+libtool: install: /usr/bin/install -c examples/.libs/ibv_intf /usr/bin/ibv_intf
+libtool: install: /usr/bin/install -c examples/.libs/ibv_polldcinfo /usr/bin/ibv_polldcinfo
+ /usr/bin/mkdir -p '/usr/include/infiniband'
+ /usr/bin/install -c -m 644 include/infiniband/arch.h include/infiniband/driver.h include/infiniband/kern-abi.h include/infiniband/opcode.h include/infiniband/verbs.h include/infiniband/mprud.h include/infiniband/sa-kern-abi.h include/infiniband/sa.h include/infiniband/marshall.h include/infiniband/ofa_verbs.h include/infiniband/driver_exp.h include/infiniband/kern-abi_exp.h include/infiniband/verbs_exp.h include/infiniband/peer_ops.h '/usr/include/infiniband'
+ /usr/bin/mkdir -p '/usr/share/man/man1'
+ /usr/bin/install -c -m 644 man/ibv_asyncwatch.1 man/ibv_devices.1 man/ibv_devinfo.1 man/ibv_rc_pingpong.1 man/ibv_uc_pingpong.1 man/ibv_ud_pingpong.1 man/ibv_srq_pingpong.1 man/ibv_cc_pingpong.1 man/ibv_task_pingpong.1 man/ibv_intf.1 '/usr/share/man/man1'
+ /usr/bin/mkdir -p '/usr/share/man/man3'
+ /usr/bin/install -c -m 644 man/ibv_alloc_pd.3 man/ibv_attach_mcast.3 man/ibv_create_ah.3 man/ibv_create_ah_from_wc.3 man/ibv_create_comp_channel.3 man/ibv_create_cq.3 man/ibv_create_qp.3 man/ibv_create_srq.3 man/ibv_event_type_str.3 man/ibv_fork_init.3 man/ibv_get_async_event.3 man/ibv_get_cq_event.3 man/ibv_get_device_guid.3 man/ibv_get_device_list.3 man/ibv_get_device_name.3 man/ibv_modify_qp.3 man/ibv_modify_srq.3 man/ibv_open_device.3 man/ibv_poll_cq.3 man/ibv_post_recv.3 man/ibv_post_send.3 man/ibv_post_srq_recv.3 man/ibv_query_device.3 man/ibv_query_gid.3 man/ibv_query_pkey.3 man/ibv_query_port.3 man/ibv_query_qp.3 man/ibv_query_srq.3 man/ibv_rate_to_mult.3 man/ibv_reg_mr.3 man/ibv_req_notify_cq.3 man/ibv_resize_cq.3 man/ibv_rate_to_mbps.3 man/ibv_exp_post_task.3 man/ibv_exp_modify_cq.3 man/ibv_create_qp_ex.3 man/ibv_create_srq_ex.3 man/ibv_open_xrcd.3 man/ibv_get_srq_num.3 man/ibv_open_qp.3 '/usr/share/man/man3'
+ /usr/bin/install -c -m 644 man/ibv_create_flow.3 man/ibv_exp_create_flow.3 man/ibv_exp_create_cq.3 man/ibv_exp_modify_qp.3 man/ibv_exp_poll_cq.3 man/ibv_exp_query_device.3 man/ibv_exp_get_provider_func.3 man/ibv_exp_reg_mr.3 man/ibv_exp_bind_mw.3 man/ibv_exp_create_qp.3 man/ibv_exp_post_send.3 man/ibv_exp_create_dct.3 man/ibv_exp_prefetch_mr.3 man/ibv_exp_alloc_mkey_list_memory.3 man/ibv_exp_create_mr.3 man/ibv_exp_dealloc_mkey_list_memory.3 man/ibv_exp_query_mkey.3 man/ibv_exp_query_dct.3 man/ibv_exp_rereg_mr.3 man/ibv_exp_query_values.3 man/ibv_alloc_mw.3 man/ibv_exp_create_res_domain.3 man/ibv_exp_query_intf.3 man/ibv_exp_create_wq.3 man/ibv_exp_modify_wq.3 man/ibv_exp_create_rwq_ind_table.3 man/ibv_exp_query_gid_attr.3 man/ibv_exp_alloc_ec_calc.3 man/ibv_exp_ec_encode_async.3 man/ibv_exp_ec_decode_async.3 man/ibv_exp_ec_update_async.3 man/ibv_exp_peer_commit_qp.3 man/ibv_query_device_ex.3 man/ibv_rereg_mr.3 man/ibv_bind_mw.3 man/ibv_inc_rkey.3 man/ibv_exp_open_device.3 man/ibv_exp_create_srq.3 man/ibv_exp_post_srq_ops.3 man/ibv_exp_alloc_dm.3 '/usr/share/man/man3'
+ /usr/bin/install -c -m 644 man/ibv_exp_cqe_ts_to_ns.3 '/usr/share/man/man3'
+ /usr/bin/mkdir -p '/usr/share/man/man7'
+ /usr/bin/install -c -m 644 man/peer_direct.7 '/usr/share/man/man7'
+make  install-data-hook
+make[2]: Entering directory '/home/mingman/MPRUD/libibverbs-41mlnx1'
+cd /usr/share/man/man3 && \
+rm -f ibv_ack_async_event.3 && \
+rm -f ibv_ack_cq_events.3 && \
+rm -f ibv_close_device.3 && \
+rm -f ibv_dealloc_pd.3 && \
+rm -f ibv_dereg_mr.3 && \
+rm -f ibv_destroy_ah.3 && \
+rm -f ibv_destroy_comp_channel.3 && \
+rm -f ibv_destroy_cq.3 && \
+rm -f ibv_destroy_qp.3 && \
+rm -f ibv_destroy_srq.3 && \
+rm -f ibv_detach_mcast.3 && \
+rm -f ibv_free_device_list.3 && \
+rm -f ibv_init_ah_from_wc.3 && \
+rm -f ibv_node_type_str.3 && \
+rm -f ibv_port_state_str.3 && \
+rm -f ibv_close_xrcd.3 && \
+rm -f ibv_destroy_flow.3 && \
+rm -f ibv_dealloc_mw.3 && \
+rm -f ibv_exp_destroy_flow.3 && \
+rm -f ibv_exp_destroy_res_domain.3 && \
+rm -f ibv_exp_release_intf.3 && \
+rm -f ibv_exp_destroy_wq.3 && \
+rm -f ibv_exp_destroy_rwq_ind_table.3 && \
+rm -f ibv_exp_dealloc_ec_calc.3 && \
+rm -f ibv_exp_ec_encode_sync.3 && \
+rm -f ibv_exp_ec_decode_sync.3 && \
+rm -f ibv_exp_ec_update_sync.3 && \
+rm -f ibv_exp_rollback_qp.3 && \
+rm -f ibv_exp_peer_peek_cq.3 && \
+rm -f ibv_exp_peer_abort_peek_cq.3 && \
+rm -f ibv_exp_free_dm.3 && \
+rm -f ibv_exp_memcpy_dm.3 && \
+ln -s ibv_get_async_event.3 ibv_ack_async_event.3 && \
+ln -s ibv_get_cq_event.3 ibv_ack_cq_events.3 && \
+ln -s ibv_open_device.3 ibv_close_device.3 && \
+ln -s ibv_alloc_pd.3 ibv_dealloc_pd.3 && \
+ln -s ibv_reg_mr.3 ibv_dereg_mr.3 && \
+ln -s ibv_create_ah.3 ibv_destroy_ah.3 && \
+ln -s ibv_create_comp_channel.3 ibv_destroy_comp_channel.3 && \
+ln -s ibv_create_cq.3 ibv_destroy_cq.3 && \
+ln -s ibv_create_qp.3 ibv_destroy_qp.3 && \
+ln -s ibv_create_srq.3 ibv_destroy_srq.3 && \
+ln -s ibv_attach_mcast.3 ibv_detach_mcast.3 && \
+ln -s ibv_get_device_list.3 ibv_free_device_list.3 && \
+ln -s ibv_create_ah_from_wc.3 ibv_init_ah_from_wc.3 && \
+ln -s ibv_event_type_str.3 ibv_node_type_str.3 && \
+ln -s ibv_event_type_str.3 ibv_port_state_str.3 && \
+ln -s ibv_open_xrcd.3 ibv_close_xrcd.3 && \
+ln -s ibv_create_flow.3 ibv_destroy_flow.3 && \
+ln -s ibv_exp_create_flow.3 ibv_exp_destroy_flow.3 && \
+ln -s ibv_alloc_mw.3 ibv_dealloc_mw.3 && \
+ln -s ibv_exp_create_res_domain.3 ibv_exp_destroy_res_domain.3 && \
+ln -s ibv_exp_query_intf.3 ibv_exp_release_intf.3 && \
+ln -s ibv_exp_create_wq.3 ibv_exp_destroy_wq.3 && \
+ln -s ibv_exp_create_rwq_ind_table.3 ibv_exp_destroy_rwq_ind_table.3 && \
+ln -s ibv_exp_alloc_ec_calc.3 ibv_exp_dealloc_ec_calc.3 && \
+ln -s ibv_exp_ec_encode_async.3 ibv_exp_ec_encode_sync.3 && \
+ln -s ibv_exp_ec_decode_async.3 ibv_exp_ec_decode_sync.3 && \
+ln -s ibv_exp_ec_update_async.3 ibv_exp_ec_update_sync.3 && \
+ln -s ibv_exp_peer_commit_qp.3 ibv_exp_rollback_qp.3 && \
+ln -s ibv_exp_peer_commit_qp.3 ibv_exp_peer_peek_cq.3 && \
+ln -s ibv_exp_alloc_dm.3 ibv_exp_free_dm.3 && \
+ln -s ibv_exp_alloc_dm.3 ibv_exp_memcpy_dm.3 && \
+ln -s ibv_exp_peer_commit_qp.3 ibv_exp_peer_abort_peek_cq.3
+make[2]: Leaving directory '/home/mingman/MPRUD/libibverbs-41mlnx1'
+make[1]: Leaving directory '/home/mingman/MPRUD/libibverbs-41mlnx1'
