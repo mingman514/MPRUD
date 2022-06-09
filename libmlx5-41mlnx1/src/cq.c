@@ -1438,7 +1438,6 @@ static inline int poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
   }
 */
 	mlx5_lock(&cq->lock);
-
 	for (npolled = 0, twc = wc; npolled < ne; ++npolled, twc += wc_size) {
     // MPRUD passes here
 		err = mlx5_poll_one(cq, &rsc, &srq, twc, wc_size, cqe_ver);

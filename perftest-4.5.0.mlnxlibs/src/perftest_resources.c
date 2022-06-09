@@ -2840,9 +2840,7 @@ int ctx_connect(struct pingpong_context *ctx,
 				ctx->ah[i] = ibv_create_ah(ctx->pd,&(attr_ex.ah_attr));
 			else
 			#endif
-        {
 				ctx->ah[i] = ibv_create_ah(ctx->pd,&(attr.ah_attr));
-        }
 
 			if (!ctx->ah[i]) {
 				fprintf(stderr, "Failed to create AH for UD\n");
@@ -3366,7 +3364,7 @@ int ctx_set_recv_wqes(struct pingpong_context *ctx,struct perftest_parameters *u
 	int			num_of_qps = user_param->num_of_qps;
 	struct ibv_recv_wr	*bad_wr_recv;
 	int			size_per_qp = user_param->rx_depth;
-
+printf("Pre-posting of RR: %d\n", size_per_qp);
 	if((user_param->use_xrc || user_param->connection_type == DC) &&
 				(user_param->duplex || user_param->tst == LAT)) {
 
@@ -3394,7 +3392,7 @@ int ctx_set_recv_wqes(struct pingpong_context *ctx,struct perftest_parameters *u
       //printf("[DEBUG] ctx->recv_sge_list[i].addr: %lx, ctx->cache_line_size: %d,  UD_ADDITION: %d   \n", ctx->recv_sge_list[i].addr, ctx->cache_line_size, UD_ADDITION);
     }
 
-    // MPRUD add 40 bytes for GRH header
+    // MPRUD add 40 bytes for GRH header if UD
 		ctx->recv_sge_list[i].length = SIZE(user_param->connection_type,user_param->size,1);
 		ctx->recv_sge_list[i].lkey   = ctx->mr[i]->lkey;
 
@@ -3433,9 +3431,11 @@ int ctx_set_recv_wqes(struct pingpong_context *ctx,struct perftest_parameters *u
 						user_param->connection_type,ctx->cache_line_size,ctx->cycle_buffer);
 			}
 		}
+    printf("Final recv_sge_list.addr = %lx\n  --> ", ctx->recv_sge_list[i].addr);
 		ctx->recv_sge_list[i].addr = ctx->rx_buffer_addr[i];    
+    printf("%lx\n", ctx->recv_sge_list[i].addr);
 	}
-printf("[DEBUG] Pre-posting (set_recv_wqe) DONE!\n");
+printf("[DEBUG] Pre-posting (set_recv_wqe) DONE: %d!\n", size_per_qp);
 	return 0;
 }
 
@@ -3760,6 +3760,7 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 						#else
             // MPRUD: unset IBV_SEND_SIGNALED here
 						ctx->wr[index].send_flags &= ~IBV_SEND_SIGNALED;
+            //printf("*************** UNSET SEND_SIGNALED 2\n");
 						#endif
 
 					#ifdef HAVE_ACCL_VERBS
@@ -3797,6 +3798,7 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
              * might be enough to use multi-path.
              * */
             //printf("[DEBUG] post_send here\n");
+            //usleep(10);
 						err = (ctx->post_send_func_pointer)(ctx->qp[index],
 							&ctx->wr[index*user_param->post_list],&bad_wr);
 					}
@@ -3881,6 +3883,7 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 						ctx->qpx[index]->wr_flags |= IBV_SEND_SIGNALED;
 						#else
 						ctx->wr[index].send_flags |= IBV_SEND_SIGNALED;
+            //printf("*************** SET SEND_SIGNALED 2\n");
 						#endif
 					#ifdef HAVE_ACCL_VERBS
 					}
@@ -3911,10 +3914,7 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 				else
 #endif
         ne = ibv_poll_cq(ctx->send_cq, CTX_POLL_BATCH, wc);
-        // printf("------------ BUFFER MSG -----------\n");
-        //    printf("%s\n", (char*)ctx->buf);	
         if (ne > 0) {
-          //printf("[DEBUG] outer polled: %d\n", ne);
           for (i = 0; i < ne; i++) {
             wc_id = (user_param->verb_type == ACCL_INTF) ?
               0 : (int)wc[i].wr_id;
@@ -3944,6 +3944,7 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
             }
           }
 
+          printf("[Outer poll] ne: %d   cq_mod: %d  totccnt: %ld\n", ne, user_param->cq_mod, totccnt);
         } else if (ne < 0) {
           fprintf(stderr, "poll CQ failed %d\n",ne);
           return_value = FAILURE;
@@ -4057,7 +4058,7 @@ int run_iter_bw_server(struct pingpong_context *ctx, struct perftest_parameters 
 			#endif
 
 			if (ne > 0) {
-        //printf("## outer_poll result: %d\n", ne);
+        //printf("[Outer poll] ne: %d   cq_mod: %d\n", ne, user_param->cq_mod);
 				if (firstRx) {
 					set_on_first_rx_packet(user_param);
 					firstRx = 0;
@@ -4172,8 +4173,6 @@ int run_iter_bw_server(struct pingpong_context *ctx, struct perftest_parameters 
 					}
 				}
 			}
-//    printf("------------ BUFFER MSG -----------\n");
-//    printf("%s\n", (char*)ctx->buf);
 		} while (ne > 0);
 
 		if (ne < 0) {

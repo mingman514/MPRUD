@@ -6,7 +6,7 @@
 #include <infiniband/verbs.h>
 #include <infiniband/verbs_exp.h>
 
-#define LOG_LEVEL 0
+#define LOG_LEVEL 1
 
 #if ((LOG_LEVEL) > 0)
   #define LOG_DEBUG(s, a...)  printf((s), ##a)
@@ -19,10 +19,12 @@
 { if((var = (type*)malloc(sizeof(type)*(size))) == NULL)        \
   { fprintf(stderr," Cannot Allocate\n"); exit(1);}}
 
+#define MIN(x,y) (x > y ? y : x)
+
 #define MPRUD_NUM_PATH 4
 #define MPRUD_DEFAULT_PORT 1
 #define MPRUD_HEADER_SIZE 12  // Session ID | MSG SQN | Pkt SQN
-#define MPRUD_PROCESSING_NUM 255    // Set as default QP size
+#define MPRUD_BUF_SPLIT_NUM 2048    // Set as default QP size
 #define MPRUD_GRH_SIZE 40
 #define MPRUD_DEFAULT_MTU 4096
 #define MPRUD_POLL_BATCH 16
@@ -32,11 +34,17 @@
 #define SUCCESS (0)
 #define FAILURE (1)
 
+#define MG_DEBUG 1
+#define MG_DEBUG_BUFFER 1
+#define MG_DEBUG_POLL 1
+#define MG_DEBUG_AH 1
+
 // post & poll measure
 extern uint64_t posted_cnt, polled_cnt; // total inner post/poll counts
 extern uint64_t ack_posted_cnt, ack_polled_cnt;
-
+extern uint64_t outer_polled_cnt;
 extern int split_num;   // number of splitted requests
+extern int recv_size, send_size, cq_size;
 
 struct ibv_ah** mprud_get_ah_list();
 void print_gid_info(union ibv_gid mgid);
@@ -46,6 +54,9 @@ int mprud_create_ah_list(struct ibv_pd *pd,
 //struct ibv_qp* mprud_create_qp(struct ibv_qp *ibqp, struct ibv_send_wr *wr);
 char *mprud_get_buffer();
 void mprud_set_buffer(void* ptr);
+void mprud_set_recv_size(int size);
+void mprud_set_send_size(int size);
+void mprud_set_cq_size(int size);
 int mprud_poll_cq(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc);
 
 int mprud_destroy_ah_list();

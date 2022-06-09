@@ -20,8 +20,7 @@
  */
 // post & poll measure
 uint64_t posted_cnt = 0, polled_cnt = 0;
-uint64_t ack_posted_cnt = 0, ack_polled_cnt = 0;
-
+int recv_size = 0, send_size = 0, cq_size = 0;
 int split_num = 0;   // number of splitted requests
 
 char *mprud_buf = NULL;
@@ -31,10 +30,11 @@ static char REMOTE_GIDS[4][50] = {
   "0000:0000:0000:0000:0000:ffff:0a00:6503", // 10.0.101.3 spine-1
   "0000:0000:0000:0000:0000:ffff:0a00:6504", // 10.0.101.4 spine-2
   "0000:0000:0000:0000:0000:ffff:0a00:6505", // 10.0.101.5 spine-3
+//  "0000:0000:0000:0000:0000:ffff:0a00:c902", // 10.0.201.2 spine-1
+//  "0000:0000:0000:0000:0000:ffff:0a00:c903", // 10.0.201.3 spine-2
+//  "0000:0000:0000:0000:0000:ffff:0a00:c904", // 10.0.201.4 spine-3
+//  "0000:0000:0000:0000:0000:ffff:0a00:c905", // 10.0.201.5 spine-4
 };
-
-int INNER_POLL_DONE_FLAG;
-
 
 struct ibv_ah** mprud_get_ah_list()
 {
@@ -72,13 +72,10 @@ uint8_t *convert_to_raw_gid(uint8_t *gid, char* str_gid)
   return gid;
 }
 
-/**
- * 05/19 need to think about proper location of each function.
- */
 int mprud_create_ah_list(struct ibv_pd *pd,
 			       struct ibv_qp_init_attr *qp_init_attr)
 {
-  LOG_DEBUG("mprud_create_ah_list\n");
+  printf("mprud_create_ah_list\n");
   struct ibv_ah_attr *ah_attr;
 
   // is my_gid needed?
@@ -90,7 +87,7 @@ int mprud_create_ah_list(struct ibv_pd *pd,
   // move these to header!! or Use file I/O?
   printf("REMOTE_GIDS len = %ld\n", sizeof(REMOTE_GIDS) / sizeof(REMOTE_GIDS[0]));
   if (sizeof(REMOTE_GIDS) / sizeof(REMOTE_GIDS[0])!= MPRUD_NUM_PATH){
-    LOG_DEBUG("Number of GID specified != Number of defined paths\n");
+    printf("Number of GID specified != Number of defined paths\n");
     return FAILURE;
   }
   for (int i=0; i<MPRUD_NUM_PATH; i++){    // num of path can be changed!
@@ -126,7 +123,7 @@ int mprud_create_ah_list(struct ibv_pd *pd,
     // create ah_attrs for static paths
     ah_list[i] = ibv_create_ah(pd, ah_attr);
     if (!ah_attr){
-      LOG_DEBUG("Unable to create address handler for UD QP\n");
+      printf("Unable to create address handler for UD QP\n");
       return FAILURE;
     }
   }
@@ -147,34 +144,58 @@ void mprud_set_buffer(void* ptr)
 int mprud_poll_cq(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc)
 {
   // App-only polling here
+  uint32_t outer_poll_num = MIN(polled_cnt/split_num, ne);
 
-  uint32_t outer_poll_num = (polled_cnt / split_num) > ne ? ne : (polled_cnt / split_num);
+  if (MG_DEBUG_POLL && outer_poll_num > 0){
+    printf("[Outer Poll]  posted_cnt: %lu  polled_cnt: %lu  split_num:%d\n", posted_cnt, polled_cnt, split_num);
+    printf("\t-->Outer Poll: %u\n", outer_poll_num);
+  }
 
   if (outer_poll_num > 0){
     for (int i=0; i<outer_poll_num; i++){
       wc[i].wr_id = 0;
       wc[i].status = IBV_WC_SUCCESS;
-      posted_cnt -= split_num;
-      polled_cnt -= split_num;
     }      
-    LOG_DEBUG("Outer Poll: %u\n", outer_poll_num);
+    posted_cnt -= split_num * outer_poll_num;
+    polled_cnt -= split_num * outer_poll_num;
+
     return outer_poll_num;
   }
-  
+
   struct ibv_wc tmp_wc[MPRUD_POLL_BATCH];
   memset(tmp_wc, 0, sizeof(struct ibv_wc) * MPRUD_POLL_BATCH);
   if (posted_cnt > polled_cnt){
-    uint32_t polled_num = cq->context->ops.poll_cq(cq, MPRUD_POLL_BATCH, tmp_wc, 1); // Go to original poll_cq
-    for (int i = 0; i < polled_num; i++) {
-      if (tmp_wc[i].status != IBV_WC_SUCCESS) {
-        fprintf(stderr, "[MPRUD] Poll send CQ error status=%u qp %d\n", tmp_wc[i].status,(int)tmp_wc[i].wr_id);
+    uint32_t now_polled = cq->context->ops.poll_cq(cq, MPRUD_POLL_BATCH, tmp_wc, 1); // Go to original poll_cq
+    if (now_polled > 0){
+      printf("[Inner Poll] %d\n", now_polled);
+      polled_cnt += now_polled;
+      for (int i = 0; i < now_polled; i++) {
+        if (tmp_wc[i].status != IBV_WC_SUCCESS) {
+          fprintf(stderr, "[MPRUD] Poll send CQ error status=%u qp %d\n", tmp_wc[i].status,(int)tmp_wc[i].wr_id);
+        }
       }
+    } else if (now_polled < 0){
+      printf("ERROR: Polling result is negative!\n");
+      return now_polled;
     }
-    polled_cnt += polled_num;
   }
-  LOG_DEBUG("Current posted_cnt: %lu\tpolled_cnt: %lu\n", posted_cnt, polled_cnt);
 
   return 0;
+}
+
+void mprud_set_recv_size(int size)
+{
+  recv_size = size;
+}
+
+void mprud_set_send_size(int size)
+{
+  send_size = size;
+}
+
+void mprud_set_cq_size(int size)
+{
+  cq_size = size;
 }
 
 /*
@@ -247,7 +268,7 @@ int mprud_destroy_ah_list()
 
   for (i=0; i<MPRUD_NUM_PATH; i++){
     if (ah_list[i]){
-      LOG_DEBUG("destroying ah #%d\n", i);
+      printf("destroying ah #%d\n", i);
       if (ibv_destroy_ah(ah_list[i]))
         return FAILURE;
     }
@@ -273,7 +294,7 @@ int perf_poll_cq(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc)
   if(!use_perf)
     return cq->context->ops.poll_cq(cq, ne, wc, 1);
 
-  LOG_DEBUG("perf_poll_cq()\n");
+  printf("perf_poll_cq()\n");
   uint32_t cq_idx = kh_value(cq_hash, kh_get(cqh, cq_hash, cq->handle));
 
   pthread_mutex_lock(&(cq_ctx[cq_idx].lock));

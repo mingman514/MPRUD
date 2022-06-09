@@ -284,13 +284,13 @@ int main(int argc, char *argv[])
 //        printf("%c -- ctx.buff_size= %ld\n", tmp, ctx.buff_size); 
 //       ((char**) ctx.buf)[0][i] = tmp;
 //      }
-
+//
 //      strcpy(ctx.buf, "test");
 //    }    
-      if (user_param.machine == CLIENT){
-        printf("%s -- %p\n", (char*)ctx.buf[0], ctx.buf[0]);
-        strcpy((char*)ctx.buf[0], "test");
-      }
+//      if (user_param.machine == CLIENT){
+//        printf("%s -- %p\n", (char*)ctx.buf[0], ctx.buf[0]);
+//        strcpy((char*)ctx.buf[0], "test");
+//      }
       printf("------------ BUFFER MSG -----------\n");
       printf("%s -- %p\n", (char*)ctx.buf[0], ctx.buf[0]);
 
@@ -484,7 +484,7 @@ int main(int argc, char *argv[])
     // does not let it pass through here due to polling...
     if (user_param.machine == CLIENT){
       printf("Client sleep to sync.\n");
-      sleep(3);
+      sleep(1);
     }
 //		if (ctx_hand_shake(&user_comm,&my_dest[0],&rem_dest[0])) {
 //			fprintf(stderr,"Failed to exchange data between server and clients\n");
@@ -623,7 +623,6 @@ int main(int argc, char *argv[])
     printf("------------ BUFFER MSG -----------\n");
     printf("%s -- (%p)\n", (char*)ctx.buf[0]);
   }
-
 
 	if (ctx_close_connection(&user_comm,&my_dest[0],&rem_dest[0])) {
 		fprintf(stderr," Failed to close connection between server and client\n");

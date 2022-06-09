@@ -6,7 +6,7 @@ mlnx_qos -i enp1s0f1 --trust=dscp
 sleep 2
 mlnx_tune -p HIGH_THROUGHPUT
 sleep 2
-cma_roce_tos -d mlx5_0 -t 106
+cma_roce_tos -d mlx5_1 -t 106
 sleep 2
 sysctl -w net.ipv4.tcp_ecn=1
 sleep 2

@@ -1,3 +1,303 @@
-make  all-am
-make[1]: Entering directory '/home/mingman/MPRUD-hooking/perftest-4.5.0.mlnxlibs'
-make[1]: Leaving directory '/home/mingman/MPRUD-hooking/perftest-4.5.0.mlnxlibs'
+Goes here! 1
+[debug] establish_connection
+libibverb reg mr --- 1
+[DEBUG] ibv_reg_mr: in->addr=0, buf=(nil)	in.length=8384, mprudlen=8495104
+create qp from mlx5 verbs.c
+mprud_create_ah_list
+REMOTE_GIDS len = 4
+SUBNET: 00:00:00:00:00:00:00:00
+GUID  : 00:00:255:255:10:00:101:02
+SUBNET: 00:00:00:00:00:00:00:00
+GUID  : 00:00:255:255:10:00:101:03
+SUBNET: 00:00:00:00:00:00:00:00
+GUID  : 00:00:255:255:10:00:101:04
+SUBNET: 00:00:00:00:00:00:00:00
+GUID  : 00:00:255:255:10:00:101:05
+max send: 128 |  max recv: 512 | send_cqe: 1023 | recv_cqe: 1023
+------------ BUFFER MSG -----------
+INITIAL STATE -- 0x55f37623dc70
+---------------------------------------------------------------------------------------
+                    Send BW Test
+ Dual-port       : OFF		Device         : mlx5_1
+ Number of qps   : 1		Transport type : IB
+ Connection type : UD		Using SRQ      : OFF
+ TX depth        : 20
+ CQ Moderation   : 1
+ Mtu             : 4096[B]
+ Link type       : Ethernet
+ GID index       : 5
+ Max inline data : 0[B]
+ rdma_cm QPs	 : OFF
+ Data ex. method : Ethernet
+---------------------------------------------------------------------------------------
+[DEBUG] USE element->lid
+ local address: LID 0000 QPN 0x043f PSN 0xa95e92
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:00:201:02
+[DEBUG] USE element->lid
+ remote address: LID 0000 QPN 0x043f PSN 0xe8c9f2
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:00:101:02
+---------------------------------------------------------------------------------------
+ #bytes     #iterations    BW peak[Gb/sec]    BW average[Gb/sec]   MsgRate[Mpps]
+[send_bw.c/main] test_method= RUN_REGULAR
+[DEBUG] Final SR sge_list addr: 55f37623dc70
+Client sleep to sync.
+[DEBUG] sbuf: 0x7f54272a2000	sg_list->addr: 55f37623dc70
+Split into 2 post_sends. Last msg: 1 bytes.
+recv_size=512 | send_size=128 | cq_size=1023
+tmp_sge->addr: 7f54272a2000  
+[MPRUD] header in buffer: sid=77 msg_sqn=0 pkt_sqn=0
+[MPRUD] data in buffer: INITIAL STATE
+mprud_turn= 1
+posted! [1]
+[MPRUD] header in buffer: sid=77 msg_sqn=0 pkt_sqn=1
+[MPRUD] data in buffer: 
+mprud_turn= 2
+posted! [2]
+[DEBUG] sbuf: 0x7f54272a2000	sg_list->addr: 55f37623dc70
+Split into 2 post_sends. Last msg: 1 bytes.
+recv_size=512 | send_size=128 | cq_size=1023
+tmp_sge->addr: 7f54272a2000  M
+[MPRUD] header in buffer: sid=77 msg_sqn=1 pkt_sqn=0
+[MPRUD] data in buffer: INITIAL STATE
+mprud_turn= 0
+posted! [3]
+[MPRUD] header in buffer: sid=77 msg_sqn=1 pkt_sqn=1
+[MPRUD] data in buffer: 
+mprud_turn= 1
+posted! [4]
+[DEBUG] sbuf: 0x7f54272a2000	sg_list->addr: 55f37623dc70
+Split into 2 post_sends. Last msg: 1 bytes.
+recv_size=512 | send_size=128 | cq_size=1023
+tmp_sge->addr: 7f54272a2000  M
+[MPRUD] header in buffer: sid=77 msg_sqn=2 pkt_sqn=0
+[MPRUD] data in buffer: INITIAL STATE
+mprud_turn= 2
+posted! [5]
+[MPRUD] header in buffer: sid=77 msg_sqn=2 pkt_sqn=1
+[MPRUD] data in buffer: 
+mprud_turn= 0
+posted! [6]
+[DEBUG] sbuf: 0x7f54272a2000	sg_list->addr: 55f37623dc70
+Split into 2 post_sends. Last msg: 1 bytes.
+recv_size=512 | send_size=128 | cq_size=1023
+tmp_sge->addr: 7f54272a2000  M
+[MPRUD] header in buffer: sid=77 msg_sqn=3 pkt_sqn=0
+[MPRUD] data in buffer: INITIAL STATE
+mprud_turn= 1
+posted! [7]
+[MPRUD] header in buffer: sid=77 msg_sqn=3 pkt_sqn=1
+[MPRUD] data in buffer: 
+mprud_turn= 2
+posted! [8]
+[DEBUG] sbuf: 0x7f54272a2000	sg_list->addr: 55f37623dc70
+Split into 2 post_sends. Last msg: 1 bytes.
+recv_size=512 | send_size=128 | cq_size=1023
+tmp_sge->addr: 7f54272a2000  M
+[MPRUD] header in buffer: sid=77 msg_sqn=4 pkt_sqn=0
+[MPRUD] data in buffer: INITIAL STATE
+mprud_turn= 0
+posted! [9]
+[MPRUD] header in buffer: sid=77 msg_sqn=4 pkt_sqn=1
+[MPRUD] data in buffer: 
+mprud_turn= 1
+posted! [10]
+[DEBUG] sbuf: 0x7f54272a2000	sg_list->addr: 55f37623dc70
+Split into 2 post_sends. Last msg: 1 bytes.
+recv_size=512 | send_size=128 | cq_size=1023
+tmp_sge->addr: 7f54272a2000  M
+[MPRUD] header in buffer: sid=77 msg_sqn=5 pkt_sqn=0
+[MPRUD] data in buffer: INITIAL STATE
+mprud_turn= 2
+posted! [11]
+[MPRUD] header in buffer: sid=77 msg_sqn=5 pkt_sqn=1
+[MPRUD] data in buffer: 
+mprud_turn= 0
+posted! [12]
+[DEBUG] sbuf: 0x7f54272a2000	sg_list->addr: 55f37623dc70
+Split into 2 post_sends. Last msg: 1 bytes.
+recv_size=512 | send_size=128 | cq_size=1023
+tmp_sge->addr: 7f54272a2000  M
+[MPRUD] header in buffer: sid=77 msg_sqn=6 pkt_sqn=0
+[MPRUD] data in buffer: INITIAL STATE
+mprud_turn= 1
+posted! [13]
+[MPRUD] header in buffer: sid=77 msg_sqn=6 pkt_sqn=1
+[MPRUD] data in buffer: 
+mprud_turn= 2
+posted! [14]
+[DEBUG] sbuf: 0x7f54272a2000	sg_list->addr: 55f37623dc70
+Split into 2 post_sends. Last msg: 1 bytes.
+recv_size=512 | send_size=128 | cq_size=1023
+tmp_sge->addr: 7f54272a2000  M
+[MPRUD] header in buffer: sid=77 msg_sqn=7 pkt_sqn=0
+[MPRUD] data in buffer: INITIAL STATE
+mprud_turn= 0
+posted! [15]
+[MPRUD] header in buffer: sid=77 msg_sqn=7 pkt_sqn=1
+[MPRUD] data in buffer: 
+mprud_turn= 1
+posted! [16]
+[DEBUG] sbuf: 0x7f54272a2000	sg_list->addr: 55f37623dc70
+Split into 2 post_sends. Last msg: 1 bytes.
+recv_size=512 | send_size=128 | cq_size=1023
+tmp_sge->addr: 7f54272a2000  M
+[MPRUD] header in buffer: sid=77 msg_sqn=8 pkt_sqn=0
+[MPRUD] data in buffer: INITIAL STATE
+mprud_turn= 2
+posted! [17]
+[MPRUD] header in buffer: sid=77 msg_sqn=8 pkt_sqn=1
+[MPRUD] data in buffer: 
+mprud_turn= 0
+posted! [18]
+[DEBUG] sbuf: 0x7f54272a2000	sg_list->addr: 55f37623dc70
+Split into 2 post_sends. Last msg: 1 bytes.
+recv_size=512 | send_size=128 | cq_size=1023
+tmp_sge->addr: 7f54272a2000  M
+[MPRUD] header in buffer: sid=77 msg_sqn=9 pkt_sqn=0
+[MPRUD] data in buffer: INITIAL STATE
+mprud_turn= 1
+posted! [19]
+[MPRUD] header in buffer: sid=77 msg_sqn=9 pkt_sqn=1
+[MPRUD] data in buffer: 
+mprud_turn= 2
+posted! [20]
+[DEBUG] sbuf: 0x7f54272a2000	sg_list->addr: 55f37623dc70
+Split into 2 post_sends. Last msg: 1 bytes.
+recv_size=512 | send_size=128 | cq_size=1023
+tmp_sge->addr: 7f54272a2000  M
+[MPRUD] header in buffer: sid=77 msg_sqn=10 pkt_sqn=0
+[MPRUD] data in buffer: INITIAL STATE
+mprud_turn= 0
+posted! [21]
+[MPRUD] header in buffer: sid=77 msg_sqn=10 pkt_sqn=1
+[MPRUD] data in buffer: 
+mprud_turn= 1
+posted! [22]
+[DEBUG] sbuf: 0x7f54272a2000	sg_list->addr: 55f37623dc70
+Split into 2 post_sends. Last msg: 1 bytes.
+recv_size=512 | send_size=128 | cq_size=1023
+tmp_sge->addr: 7f54272a2000  M
+[MPRUD] header in buffer: sid=77 msg_sqn=11 pkt_sqn=0
+[MPRUD] data in buffer: INITIAL STATE
+mprud_turn= 2
+posted! [23]
+[MPRUD] header in buffer: sid=77 msg_sqn=11 pkt_sqn=1
+[MPRUD] data in buffer: 
+mprud_turn= 0
+posted! [24]
+[DEBUG] sbuf: 0x7f54272a2000	sg_list->addr: 55f37623dc70
+Split into 2 post_sends. Last msg: 1 bytes.
+recv_size=512 | send_size=128 | cq_size=1023
+tmp_sge->addr: 7f54272a2000  M
+[MPRUD] header in buffer: sid=77 msg_sqn=12 pkt_sqn=0
+[MPRUD] data in buffer: INITIAL STATE
+mprud_turn= 1
+posted! [25]
+[MPRUD] header in buffer: sid=77 msg_sqn=12 pkt_sqn=1
+[MPRUD] data in buffer: 
+mprud_turn= 2
+posted! [26]
+[DEBUG] sbuf: 0x7f54272a2000	sg_list->addr: 55f37623dc70
+Split into 2 post_sends. Last msg: 1 bytes.
+recv_size=512 | send_size=128 | cq_size=1023
+tmp_sge->addr: 7f54272a2000  M
+[MPRUD] header in buffer: sid=77 msg_sqn=13 pkt_sqn=0
+[MPRUD] data in buffer: INITIAL STATE
+mprud_turn= 0
+posted! [27]
+[MPRUD] header in buffer: sid=77 msg_sqn=13 pkt_sqn=1
+[MPRUD] data in buffer: 
+mprud_turn= 1
+posted! [28]
+[DEBUG] sbuf: 0x7f54272a2000	sg_list->addr: 55f37623dc70
+Split into 2 post_sends. Last msg: 1 bytes.
+recv_size=512 | send_size=128 | cq_size=1023
+tmp_sge->addr: 7f54272a2000  M
+[MPRUD] header in buffer: sid=77 msg_sqn=14 pkt_sqn=0
+[MPRUD] data in buffer: INITIAL STATE
+mprud_turn= 2
+posted! [29]
+[MPRUD] header in buffer: sid=77 msg_sqn=14 pkt_sqn=1
+[MPRUD] data in buffer: 
+mprud_turn= 0
+posted! [30]
+[DEBUG] sbuf: 0x7f54272a2000	sg_list->addr: 55f37623dc70
+Split into 2 post_sends. Last msg: 1 bytes.
+recv_size=512 | send_size=128 | cq_size=1023
+tmp_sge->addr: 7f54272a2000  M
+[MPRUD] header in buffer: sid=77 msg_sqn=15 pkt_sqn=0
+[MPRUD] data in buffer: INITIAL STATE
+mprud_turn= 1
+posted! [31]
+[MPRUD] header in buffer: sid=77 msg_sqn=15 pkt_sqn=1
+[MPRUD] data in buffer: 
+mprud_turn= 2
+posted! [32]
+[DEBUG] sbuf: 0x7f54272a2000	sg_list->addr: 55f37623dc70
+Split into 2 post_sends. Last msg: 1 bytes.
+recv_size=512 | send_size=128 | cq_size=1023
+tmp_sge->addr: 7f54272a2000  M
+[MPRUD] header in buffer: sid=77 msg_sqn=16 pkt_sqn=0
+[MPRUD] data in buffer: INITIAL STATE
+mprud_turn= 0
+posted! [33]
+[MPRUD] header in buffer: sid=77 msg_sqn=16 pkt_sqn=1
+[MPRUD] data in buffer: 
+mprud_turn= 1
+posted! [34]
+[DEBUG] sbuf: 0x7f54272a2000	sg_list->addr: 55f37623dc70
+Split into 2 post_sends. Last msg: 1 bytes.
+recv_size=512 | send_size=128 | cq_size=1023
+tmp_sge->addr: 7f54272a2000  M
+[MPRUD] header in buffer: sid=77 msg_sqn=17 pkt_sqn=0
+[MPRUD] data in buffer: INITIAL STATE
+mprud_turn= 2
+posted! [35]
+[MPRUD] header in buffer: sid=77 msg_sqn=17 pkt_sqn=1
+[MPRUD] data in buffer: 
+mprud_turn= 0
+posted! [36]
+[DEBUG] sbuf: 0x7f54272a2000	sg_list->addr: 55f37623dc70
+Split into 2 post_sends. Last msg: 1 bytes.
+recv_size=512 | send_size=128 | cq_size=1023
+tmp_sge->addr: 7f54272a2000  M
+[MPRUD] header in buffer: sid=77 msg_sqn=18 pkt_sqn=0
+[MPRUD] data in buffer: INITIAL STATE
+mprud_turn= 1
+posted! [37]
+[MPRUD] header in buffer: sid=77 msg_sqn=18 pkt_sqn=1
+[MPRUD] data in buffer: 
+mprud_turn= 2
+posted! [38]
+[DEBUG] sbuf: 0x7f54272a2000	sg_list->addr: 55f37623dc70
+Split into 2 post_sends. Last msg: 1 bytes.
+recv_size=512 | send_size=128 | cq_size=1023
+tmp_sge->addr: 7f54272a2000  M
+[MPRUD] header in buffer: sid=77 msg_sqn=19 pkt_sqn=0
+[MPRUD] data in buffer: INITIAL STATE
+mprud_turn= 0
+posted! [39]
+[MPRUD] header in buffer: sid=77 msg_sqn=19 pkt_sqn=1
+[MPRUD] data in buffer: 
+mprud_turn= 1
+posted! [40]
+[Inner Poll] 16
+[Outer Poll]  posted_cnt: 40  polled_cnt: 16  split_num:2
+	-->Outer Poll: 8
+[Outer poll] ne: 8   cq_mod: 1  totccnt: 8
+[Inner Poll] 16
+[Outer Poll]  posted_cnt: 24  polled_cnt: 16  split_num:2
+	-->Outer Poll: 8
+[Outer poll] ne: 8   cq_mod: 1  totccnt: 16
+[Inner Poll] 8
+[Outer Poll]  posted_cnt: 8  polled_cnt: 8  split_num:2
+	-->Outer Poll: 4
+[Outer poll] ne: 4   cq_mod: 1  totccnt: 20
+ 4097       20               16.04              11.28  		   0.344091
+---------------------------------------------------------------------------------------
+------------ BUFFER MSG -----------
+INITIAL STATE -- (0xc00)
+destroying ah #0
+destroying ah #1
+destroying ah #2
+destroying ah #3

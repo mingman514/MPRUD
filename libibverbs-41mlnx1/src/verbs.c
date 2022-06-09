@@ -339,7 +339,7 @@ struct ibv_mr *__ibv_exp_reg_mr(struct ibv_exp_reg_mr_in *in)
 	//memset(&new_in, 0, sizeof(in));
   new_in = *(in);
 	new_in.addr = mprud_get_buffer();
-	new_in.length = (MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU) * MPRUD_PROCESSING_NUM; 
+	new_in.length = (MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU) * MPRUD_BUF_SPLIT_NUM; 
   printf("[DEBUG] ibv_reg_mr: in->addr=%lx, buf=%p\tin.length=%d, mprudlen=%d\n", (uint64_t)in->addr, new_in.addr, in->length, new_in.length);
 
 
@@ -360,7 +360,7 @@ struct ibv_mr *__ibv_reg_mr(struct ibv_pd *pd, void *addr,
 	//in.addr = addr;
 	in.addr = mprud_get_buffer();
 	//in.length = length;
-	in.length = (MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU) * MPRUD_PROCESSING_NUM; 
+	in.length = (MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU) * MPRUD_BUF_SPLIT_NUM; 
 	in.exp_access = access;
   printf("[DEBUG] ibv_reg_mr: in.addr=%p, buf=%p\tin.length=%d, mprudlen=%d\n", in.addr, mprud_get_buffer(), length, in.length);
 
@@ -543,6 +543,11 @@ struct ibv_cq *__ibv_create_cq(struct ibv_context *context, int cqe, void *cq_co
 	struct ibv_cq *cq;
 
 	pthread_mutex_lock(&context->mutex);
+  
+  //MPRUD by mingman
+  cqe = 1023;
+  // change cqe size here
+  //cqe = 1023;
 
 	cq = context->ops.create_cq(context, cqe, channel, comp_vector);
 
@@ -665,16 +670,33 @@ default_symver(__ibv_destroy_srq, ibv_destroy_srq);
 struct ibv_qp *__ibv_create_qp(struct ibv_pd *pd,
 			       struct ibv_qp_init_attr *qp_init_attr)
 {
-	struct ibv_qp *qp = pd->context->ops.create_qp(pd, qp_init_attr);
-  
+  // QP size control
+/*
+  // qp increase send_max_wr, recv_max_wr
+ printf("max_recv_wr = %u -->", qp_init_attr->cap.max_recv_wr);
+qp_init_attr->cap.max_recv_wr = 1024;
+ printf("%u\n", qp_init_attr->cap.max_recv_wr);
+// qp_init_attr->cap.max_send_wr = 128;
+// qp_init_attr->cap.max_recv_wr = 10000;
+
+ printf("max_send_wr = %u -->", qp_init_attr->cap.max_send_wr);
+ qp_init_attr->cap.max_send_wr = 128;
+ printf("%u\n", qp_init_attr->cap.max_send_wr);
+*/
+
+ //qp_init_attr->cap.max_send_wr = 10000;
   //MPRUD by mingman~
-  LOG_DEBUG("verbs.c/__ibv_create_qp\n"); 
+  qp_init_attr->cap.max_send_wr = 128;
+  qp_init_attr->cap.max_recv_wr = 512;
+
+  
+  //~MPRUD by mingman
+
+	struct ibv_qp *qp = pd->context->ops.create_qp(pd, qp_init_attr);
+
+ 
+  //MPRUD by mingman~
   if (mprud_create_ah_list(pd, qp_init_attr))
-    printf("[verbs.c] mprud_create_ah_list FAIL!\n");
-
-  printf("[verbs.c] mprud_create_ah_list SUCCESS!\n");
-
-
   
   //~MPRUD by mingman
 	if (qp) {
@@ -690,6 +712,23 @@ struct ibv_qp *__ibv_create_qp(struct ibv_pd *pd,
 		pthread_mutex_init(&qp->mutex, NULL);
 		pthread_cond_init(&qp->cond, NULL);
 	}
+
+  if (1){
+       // TEMP
+       struct ibv_qp_attr attr;
+         struct ibv_qp_init_attr init_attr;
+         ibv_query_qp(qp,&attr, 0, &init_attr);
+
+         printf("max send: %u |  max recv: %u | send_cqe: %u | recv_cqe: %u\n", init_attr.cap.max_send_wr, init_attr     .cap.max_recv_wr, qp->send_cq->cqe, qp->recv_cq->cqe);
+  // Set recv&send qp size
+/*  mprud_set_send_size(qp_init_attr->cap.max_send_wr);
+  mprud_set_recv_size(qp_init_attr->cap.max_recv_wr);
+  mprud_set_cq_size(qp_init_attr->cap.max_recv_wr);
+  */
+  mprud_set_send_size(init_attr.cap.max_send_wr);
+  mprud_set_recv_size(init_attr.cap.max_recv_wr);
+  mprud_set_cq_size(qp->recv_cq->cqe);
+       }
 
 	return qp;
 }
