@@ -3,6 +3,7 @@
 
 #include <infiniband/mprud.h>
 #include <arpa/inet.h>
+#include <stdlib.h>
 //#include <pthread.h>
 //#include <sched.h>
 //#include <unistd.h>
@@ -23,13 +24,15 @@ uint64_t posted_cnt = 0, polled_cnt = 0;
 int recv_size = 0, send_size = 0, cq_size = 0;
 int split_num = 0;   // number of splitted requests
 
+// temp variable to trace buffer
+int tmp_num = 0;
 char *mprud_buf = NULL;
 static struct ibv_ah* ah_list[MPRUD_NUM_PATH];
 static char REMOTE_GIDS[4][50] = {
-  "0000:0000:0000:0000:0000:ffff:0a00:6502", // 10.0.101.2 spine-4
   "0000:0000:0000:0000:0000:ffff:0a00:6503", // 10.0.101.3 spine-1
   "0000:0000:0000:0000:0000:ffff:0a00:6504", // 10.0.101.4 spine-2
   "0000:0000:0000:0000:0000:ffff:0a00:6505", // 10.0.101.5 spine-3
+  "0000:0000:0000:0000:0000:ffff:0a00:6502", // 10.0.101.2 spine-4
 //  "0000:0000:0000:0000:0000:ffff:0a00:c902", // 10.0.201.2 spine-1
 //  "0000:0000:0000:0000:0000:ffff:0a00:c903", // 10.0.201.3 spine-2
 //  "0000:0000:0000:0000:0000:ffff:0a00:c904", // 10.0.201.4 spine-3
@@ -85,11 +88,12 @@ int mprud_create_ah_list(struct ibv_pd *pd,
   //print_gid_info(my_gid); 
 
   // move these to header!! or Use file I/O?
-  printf("REMOTE_GIDS len = %ld\n", sizeof(REMOTE_GIDS) / sizeof(REMOTE_GIDS[0]));
-  if (sizeof(REMOTE_GIDS) / sizeof(REMOTE_GIDS[0])!= MPRUD_NUM_PATH){
-    printf("Number of GID specified != Number of defined paths\n");
-    return FAILURE;
+  printf("REMOTE_GIDS len = %ld  |  Number of Path to use = %d\n", sizeof(REMOTE_GIDS) / sizeof(REMOTE_GIDS[0]), MPRUD_NUM_PATH);
+  if (sizeof(REMOTE_GIDS) / sizeof(REMOTE_GIDS[0]) < MPRUD_NUM_PATH){
+    printf("ERROR: Specified GIDs are less than the number of paths you are trying to use!\n"); 
+    exit(1);
   }
+
   for (int i=0; i<MPRUD_NUM_PATH; i++){    // num of path can be changed!
 
     uint8_t *temp_gid;
@@ -158,7 +162,7 @@ int mprud_poll_cq(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc)
     }      
     posted_cnt -= split_num * outer_poll_num;
     polled_cnt -= split_num * outer_poll_num;
-
+//mprud_print_buffer();
     return outer_poll_num;
   }
 
@@ -166,6 +170,11 @@ int mprud_poll_cq(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc)
   memset(tmp_wc, 0, sizeof(struct ibv_wc) * MPRUD_POLL_BATCH);
   if (posted_cnt > polled_cnt){
     uint32_t now_polled = cq->context->ops.poll_cq(cq, MPRUD_POLL_BATCH, tmp_wc, 1); // Go to original poll_cq
+
+    tmp_num++;
+    printf("\n---------- PRINT BUFFER [#%d polling] -----------\n", tmp_num);
+    mprud_print_buffer();
+
     if (now_polled > 0){
       printf("[Inner Poll] %d\n", now_polled);
       polled_cnt += now_polled;
@@ -198,6 +207,18 @@ void mprud_set_cq_size(int size)
   cq_size = size;
 }
 
+void mprud_print_buffer()
+{
+  //int n = MPRUD_BUF_SPLIT_NUM;
+  int n = 50;
+  
+  for (int i=0; i<n; i++){
+    char* cur = mprud_get_buffer() + i * MPRUD_RECV_BUF_OFFSET;
+    /* uint32_t* + 1 => plus sizeof(uint32_t) */
+    printf("[#%d] %p |  sid: %u  msg_sqn: %u  pkt_sqn: %u\n", i+1, (uint32_t*) cur, *((uint32_t*)cur + 10), *((uint32_t*)cur+11), *((uint32_t*)cur+12));
+        //*((uint32_t*)cur+40),*((uint32_t*)cur+44),*((uint32_t*)cur+48));
+  }
+}
 /*
 struct ibv_qp* mprud_create_qp(struct ibv_qp *ibqp, struct ibv_send_wr *wr)
 {

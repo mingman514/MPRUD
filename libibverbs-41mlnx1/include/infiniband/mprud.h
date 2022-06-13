@@ -24,7 +24,12 @@
 #define MPRUD_NUM_PATH 4
 #define MPRUD_DEFAULT_PORT 1
 #define MPRUD_HEADER_SIZE 12  // Session ID | MSG SQN | Pkt SQN
-#define MPRUD_BUF_SPLIT_NUM 2048    // Set as default QP size
+/**
+ * MPRUD_BUF_SPLIT_NUM must be larger than max send/recv
+ * queue size (send_size, recv_size). Otherwise, the buffer
+ * will be overlapped before the data is processed.
+ **/
+#define MPRUD_BUF_SPLIT_NUM 1024    // Set as default QP size
 #define MPRUD_GRH_SIZE 40
 #define MPRUD_DEFAULT_MTU 4096
 #define MPRUD_POLL_BATCH 16
@@ -58,6 +63,9 @@ void mprud_set_recv_size(int size);
 void mprud_set_send_size(int size);
 void mprud_set_cq_size(int size);
 int mprud_poll_cq(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc);
+
+void mprud_print_buffer();
+
 
 int mprud_destroy_ah_list();
 #endif

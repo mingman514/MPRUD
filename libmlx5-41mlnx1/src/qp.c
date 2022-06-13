@@ -2388,9 +2388,12 @@ int mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
   /* Insert my code */
   char *env = getenv("ENABLE_MPRUD");
   if (env && atoi(env) && ibqp->qp_type == IBV_QPT_UD){ // MPRUD enabled & is UD
+
     struct ibv_ah **ah_list = mprud_get_ah_list();
-    if (!ah_list[mprud_turn])
+    if (!ah_list[mprud_turn]){
       printf("[qp.c/mlx5_post_send] AH is NULL!!\n");
+      return FAILURE;
+    }
 
     uint32_t size = wr->sg_list->length;
     int i, err;
@@ -2434,14 +2437,19 @@ int mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
      * Message Splitting
      */
     char *cur;
-    int max_outstd = MIN(send_size, MPRUD_BUF_SPLIT_NUM); // num of outstanding WR
+    if (send_size > MPRUD_BUF_SPLIT_NUM){
+      printf("ERROR: MPRUD_BUF_SPLIT_NUM(%d) must be equal or larger than send_size(%d)\n", MPRUD_BUF_SPLIT_NUM, send_size);
+      return FAILURE;
+    };
     for (i = 0; i < split_num; i++, cur_idx++){
       cur_idx = cur_idx % MPRUD_BUF_SPLIT_NUM;
       cur = sbuf + cur_idx * MPRUD_SEND_BUF_OFFSET;  // MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU
+      /* initialize buffer */
+      memset(cur, 0, MPRUD_SEND_BUF_OFFSET);
 
       // 1. write header
       struct mprud_header mh = {
-        .sid = 77,
+        .sid = 128,
         .msg_sqn = msg_sqn, // global variable
         .pkt_sqn = i,
       };
@@ -2457,16 +2465,16 @@ int mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
       // 3. replace wr 
       tmp_sge->addr = (uint64_t) cur; 
       tmp_sge->length = MPRUD_SEND_BUF_OFFSET;
+
       if (i == split_num - 1 && last_size)
         tmp_sge->length = MPRUD_HEADER_SIZE + last_size;
 
       tmp_wr->sg_list = tmp_sge; 
 
       // 4. set ah
-      //mprud_turn = 3;
-      wr->wr.ud.ah = ah_list[mprud_turn];
-      //mprud_turn = (mprud_turn + 1) % MPRUD_NUM_PATH;
-      mprud_turn = (mprud_turn + 1) % 3;
+      //mprud_turn = 2;
+      tmp_wr->wr.ud.ah = ah_list[mprud_turn];
+      mprud_turn = (mprud_turn + 1) % MPRUD_NUM_PATH;
 
       if (MG_DEBUG_AH)
         printf("mprud_turn= %d\n", mprud_turn);
@@ -2485,12 +2493,12 @@ int mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
         return err;
       }
       // polling
-      while (posted_cnt - polled_cnt >= max_outstd) {
+      while (posted_cnt - polled_cnt >= send_size) {
         ne = mlx5_poll_cq_1(ibqp->send_cq, MPRUD_POLL_BATCH, wc, 1);
         if (ne > 0){
           polled_cnt += ne;
           if (MG_DEBUG_POLL)
-            printf("  ---> [INNER POLL] %d\n\ttotal posted: %lu  total polled: %lu  max_outstd: %d\n", ne, posted_cnt, polled_cnt, max_outstd);
+            printf("  ---> [INNER POLL] %d\n\ttotal posted: %lu  total polled: %lu  send_size: %d\n", ne, posted_cnt, polled_cnt, send_size);
           for (int i = 0; i < ne; i++) {
             if (wc[i].status != IBV_WC_SUCCESS) {
               fprintf(stderr, "[MPRUD] Poll send CQ error status=%u qp %d\n", wc[i].status,(int)wc[i].wr_id);
@@ -2675,14 +2683,24 @@ int mlx5_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
      */
     char *cur;
     int max_outstd = MIN(recv_size, MPRUD_BUF_SPLIT_NUM);
+    if (recv_size > MPRUD_BUF_SPLIT_NUM){
+      printf("ERROR: MPRUD_BUF_SPLIT_NUM(%d) must be equal or larger than recv_size(%d)\n", MPRUD_BUF_SPLIT_NUM, recv_size);
+      return FAILURE;
+    };
+
     for (i = 0; i < split_num; i++, cur_idx++){
       // 1. receive request
       cur_idx = cur_idx % MPRUD_BUF_SPLIT_NUM;
       cur = rbuf + cur_idx * MPRUD_RECV_BUF_OFFSET; // MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU
+      /* initialize buffer */
+      memset(cur, 0, MPRUD_RECV_BUF_OFFSET);
+
       tmp_sge->addr = (uint64_t)cur;
       tmp_sge->length = MPRUD_RECV_BUF_OFFSET; 
+
       if (i == split_num - 1 && last_size)
         tmp_sge->length = MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + last_size;
+
       if (MG_DEBUG_BUFFER)
         printf("[MPRUD] Msg #%d) addr: %lx\tlength: %u\n", i, tmp_sge->addr, tmp_sge->length); 
       tmp_wr->sg_list = tmp_sge; 
@@ -2697,7 +2715,7 @@ int mlx5_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
         return err;
       }
       // polling
-      while (posted_cnt - polled_cnt >= max_outstd){   // recv_size: max_recv_wr
+      while (posted_cnt - polled_cnt >= recv_size){   // recv_size: max_recv_wr
         ne = mlx5_poll_cq_1(ibqp->recv_cq, MPRUD_POLL_BATCH, wc, 1);
         if (ne > 0){
           polled_cnt += ne;
@@ -2711,10 +2729,12 @@ int mlx5_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
           }
           // Check buffer
           if (MG_DEBUG_BUFFER){
-            for(int i=polled_cnt-ne; i<polled_cnt; i++){
+             printf("\n---------- PRINT BUFFER [pre-inner polling] -----------\n");
+             mprud_print_buffer();
+            /*for(int i=polled_cnt-ne; i<polled_cnt; i++){
               char* cur = mprud_get_buffer() + i *  MPRUD_RECV_BUF_OFFSET;
               printf("cur addr: %p sid=%u   msg_sqn: %u  pkt_sqn: %u\n", cur, *(cur+40), *(cur+44), *(cur+48));
-            }
+            }*/
           }
 
         } else if (ne < 0){
