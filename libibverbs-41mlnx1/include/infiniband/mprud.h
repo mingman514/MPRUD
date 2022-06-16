@@ -40,7 +40,7 @@
 #define FAILURE (1)
 
 #define MG_DEBUG 1
-#define MG_DEBUG_BUFFER 1
+#define MG_DEBUG_BUFFER 0
 #define MG_DEBUG_POLL 1
 #define MG_DEBUG_AH 1
 

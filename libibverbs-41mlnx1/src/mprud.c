@@ -185,7 +185,8 @@ int mprud_poll_cq(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc)
   if (posted_cnt > polled_cnt){
     uint32_t now_polled = cq->context->ops.poll_cq(cq, MPRUD_POLL_BATCH, tmp_wc, 1); // Go to original poll_cq
 
-    mprud_print_inner_buffer();
+    if (MG_DEBUG_BUFFER)
+      mprud_print_inner_buffer();
 
     if (now_polled > 0){
       printf("[Inner Poll] %d\n", now_polled);

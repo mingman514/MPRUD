@@ -333,7 +333,41 @@ struct ibv_mr *__ibv_exp_reg_mr(struct ibv_exp_reg_mr_in *in)
 		errno = ENOSYS;
 		return NULL;
 	}
-
+//  
+//  char *env = getenv("ENABLE_MPRUD");
+//  if (env && atoi(env)){
+//    // set outer buffer addr
+//    //in->addr = malloc(in->length);  // type casting is needed?
+//
+//    printf("[MPRUD] Create inner buffer\n");
+//    struct ibv_exp_reg_mr_in new_in;
+//    new_in = *(in);
+//    new_in.addr = NULL; // mprud_get_inner_buffer();
+//    new_in.length = (MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU) * MPRUD_BUF_SPLIT_NUM; 
+//     if (MG_DEBUG_BUFFER)
+//       printf("[DEBUG] ibv_reg_mr: (Outer buffer)in.length=%d --> (Inner buffer)mprudlen=%d\n", in->length, new_in.length);
+//	
+//     
+//    struct ibv_mr *inner_mr = __ibv_common_reg_mr(&new_in, ctx);
+//    if (!inner_mr)
+//      fprintf(stderr, "Couldn't allocate inner MR\n");
+//	
+//    // set inner buffer addr  
+//    mprud_set_inner_buffer(new_in.addr);
+//
+//  //~MPRUD by mingman
+//  struct ibv_mr *outer_mr = __ibv_common_reg_mr(in, ctx);
+//  
+//    mprud_set_outer_buffer(in->addr);
+//    printf("BUF outer: %p   inner: %p\n", in->addr, new_in.addr);
+//    printf("MR outer: %p   inner: %p\n", outer_mr, inner_mr);
+//
+//  return outer_mr;
+//
+//  }
+//
+//  return __ibv_common_reg_mr(in, ctx);
+  
   // MPRUD passes here
   //MPRUD by mingman~
   /**
@@ -350,7 +384,7 @@ struct ibv_mr *__ibv_exp_reg_mr(struct ibv_exp_reg_mr_in *in)
     printf("[MPRUD] Create inner buffer\n");
     struct ibv_exp_reg_mr_in new_in;
     new_in = *(in);
-    new_in.addr = mprud_get_inner_buffer();
+    new_in.addr = NULL;
     new_in.length = (MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU) * MPRUD_BUF_SPLIT_NUM; 
      if (MG_DEBUG_BUFFER)
        printf("[DEBUG] ibv_reg_mr: (Outer buffer)in.length=%d --> (Inner buffer)mprudlen=%d\n", in->length, new_in.length);
@@ -362,7 +396,9 @@ struct ibv_mr *__ibv_exp_reg_mr(struct ibv_exp_reg_mr_in *in)
 	
     // set inner buffer addr  
     mprud_set_inner_buffer(new_in.addr);
-    printf("outer: %p   inner: %p\n", in->addr, new_in.addr);
+
+    inner_mr->addr = in->addr;
+    printf("outer: %p   inner: %p\n", mprud_get_outer_buffer(), mprud_get_inner_buffer() );
 
     return inner_mr;
   }
