@@ -259,7 +259,7 @@ struct ibv_mr *__ibv_common_reg_mr(struct ibv_exp_reg_mr_in *in,
 	int is_odp;
 	int is_pa;
 	int is_dm;
- 
+  
   // MPRUD passes here 
 	if (is_shared_mr(in->exp_access)) {
 		fprintf(stderr, "shared_mr flags are not supported\n");
@@ -323,31 +323,52 @@ struct ibv_mr *__ibv_common_reg_mr(struct ibv_exp_reg_mr_in *in,
 		ibv_dofork_range(in->addr, in->length);
 	}
 
-
-	mprud_set_buffer(mr->addr);
-
 	return mr;
 }
 
 struct ibv_mr *__ibv_exp_reg_mr(struct ibv_exp_reg_mr_in *in)
 {
 	struct verbs_context_exp *ctx = verbs_get_exp_ctx(in->pd->context);
-  printf("libibverb reg mr --- 1\n");
-  // MPRUD passes here
-  struct ibv_exp_reg_mr_in new_in;
-
-	//memset(&new_in, 0, sizeof(in));
-  new_in = *(in);
-	new_in.addr = mprud_get_buffer();
-	new_in.length = (MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU) * MPRUD_BUF_SPLIT_NUM; 
-  printf("[DEBUG] ibv_reg_mr: in->addr=%lx, buf=%p\tin.length=%d, mprudlen=%d\n", (uint64_t)in->addr, new_in.addr, in->length, new_in.length);
-
-
-	if (!ctx->drv_exp_reg_mr) {
+  if (!ctx->drv_exp_reg_mr) {
 		errno = ENOSYS;
 		return NULL;
 	}
-	return __ibv_common_reg_mr(&new_in, ctx);
+
+  // MPRUD passes here
+  //MPRUD by mingman~
+  /**
+   *  If buffer address & size are passed, Verbs API will automatically
+   *  allocate memory to buffer.
+   *  Since Perftest app sets 'IBV_EXP_ACCESS_ALLOCATE_MR' Flag.
+   */
+  char *env = getenv("ENABLE_MPRUD");
+  if (env && atoi(env)){
+    // set outer buffer addr
+    in->addr = malloc(in->length);  // type casting is needed?
+    mprud_set_outer_buffer(in->addr);
+
+    printf("[MPRUD] Create inner buffer\n");
+    struct ibv_exp_reg_mr_in new_in;
+    new_in = *(in);
+    new_in.addr = mprud_get_inner_buffer();
+    new_in.length = (MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU) * MPRUD_BUF_SPLIT_NUM; 
+     if (MG_DEBUG_BUFFER)
+       printf("[DEBUG] ibv_reg_mr: (Outer buffer)in.length=%d --> (Inner buffer)mprudlen=%d\n", in->length, new_in.length);
+	
+    struct ibv_mr *inner_mr = __ibv_common_reg_mr(&new_in, ctx);
+
+    if (! inner_mr)
+      fprintf(stderr, "Couldn't allocate inner MR\n");
+	
+    // set inner buffer addr  
+    mprud_set_inner_buffer(new_in.addr);
+    printf("outer: %p   inner: %p\n", in->addr, new_in.addr);
+
+    return inner_mr;
+  }
+  //~MPRUD by mingman
+
+  return __ibv_common_reg_mr(in, ctx);
 }
 
 struct ibv_mr *__ibv_reg_mr(struct ibv_pd *pd, void *addr,
@@ -357,12 +378,20 @@ struct ibv_mr *__ibv_reg_mr(struct ibv_pd *pd, void *addr,
 
 	memset(&in, 0, sizeof(in));
 	in.pd = pd;
-	//in.addr = addr;
-	in.addr = mprud_get_buffer();
-	//in.length = length;
-	in.length = (MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU) * MPRUD_BUF_SPLIT_NUM; 
+	in.addr = addr;
+	in.length = length;
 	in.exp_access = access;
-  printf("[DEBUG] ibv_reg_mr: in.addr=%p, buf=%p\tin.length=%d, mprudlen=%d\n", in.addr, mprud_get_buffer(), length, in.length);
+
+  //MPRUD by mingman~
+  char *env = getenv("ENABLE_MPRUD");
+  if (env && atoi(env)){
+    printf("[MPRUD] Create inner buffer\n");
+    in.addr = mprud_get_inner_buffer();
+    in.length = (MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU) * MPRUD_BUF_SPLIT_NUM; 
+    if (MG_DEBUG_BUFFER)
+      printf("[DEBUG] ibv_reg_mr: (Outer buffer)in.length=%d --> (Inner buffer)mprudlen=%d\n", length, in.length);
+  }
+  //~MPRUD by mingman
 
 	return __ibv_common_reg_mr(&in, NULL);
 }

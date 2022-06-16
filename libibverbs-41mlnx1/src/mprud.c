@@ -22,11 +22,10 @@
 // post & poll measure
 uint64_t posted_cnt = 0, polled_cnt = 0;
 int recv_size = 0, send_size = 0, cq_size = 0;
-int split_num = 0;   // number of splitted requests
+int split_num = 1;   // number of splitted requests
 
-// temp variable to trace buffer
-int tmp_num = 0;
-char *mprud_buf = NULL;
+char *inner_buf = NULL;
+char *outer_buf = NULL;
 static struct ibv_ah* ah_list[MPRUD_NUM_PATH];
 static char REMOTE_GIDS[4][50] = {
   "0000:0000:0000:0000:0000:ffff:0a00:6503", // 10.0.101.3 spine-1
@@ -134,16 +133,31 @@ int mprud_create_ah_list(struct ibv_pd *pd,
 
   return SUCCESS;
 }
-char *mprud_get_buffer()
+char *mprud_get_inner_buffer()
 {
-  return mprud_buf;
+  return inner_buf;
 } 
 
-void mprud_set_buffer(void* ptr)
+void mprud_set_inner_buffer(void* ptr)
 {
-  mprud_buf = ptr;
+  if (MG_DEBUG_BUFFER)
+    printf("Set Inner Buffer to [%p]\n", ptr);
+
+  inner_buf = ptr;
 }
 
+char *mprud_get_outer_buffer()
+{
+  return outer_buf;
+}
+
+void mprud_set_outer_buffer(void* ptr)
+{
+  if (MG_DEBUG_BUFFER)
+    printf("Set Outer Buffer to [%p]\n", ptr);
+
+  outer_buf = ptr;
+}
 
 int mprud_poll_cq(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc)
 {
@@ -162,7 +176,7 @@ int mprud_poll_cq(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc)
     }      
     posted_cnt -= split_num * outer_poll_num;
     polled_cnt -= split_num * outer_poll_num;
-//mprud_print_buffer();
+
     return outer_poll_num;
   }
 
@@ -171,9 +185,7 @@ int mprud_poll_cq(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc)
   if (posted_cnt > polled_cnt){
     uint32_t now_polled = cq->context->ops.poll_cq(cq, MPRUD_POLL_BATCH, tmp_wc, 1); // Go to original poll_cq
 
-    tmp_num++;
-    printf("\n---------- PRINT BUFFER [#%d polling] -----------\n", tmp_num);
-    mprud_print_buffer();
+    mprud_print_inner_buffer();
 
     if (now_polled > 0){
       printf("[Inner Poll] %d\n", now_polled);
@@ -207,13 +219,14 @@ void mprud_set_cq_size(int size)
   cq_size = size;
 }
 
-void mprud_print_buffer()
+void mprud_print_inner_buffer()
 {
   //int n = MPRUD_BUF_SPLIT_NUM;
-  int n = 50;
+  int n = 30;
   
+  printf("\n---------- PRINT BUFFER -----------\n");
   for (int i=0; i<n; i++){
-    char* cur = mprud_get_buffer() + i * MPRUD_RECV_BUF_OFFSET;
+    char* cur = mprud_get_inner_buffer() + i * MPRUD_RECV_BUF_OFFSET;
     /* uint32_t* + 1 => plus sizeof(uint32_t) */
     printf("[#%d] %p |  sid: %u  msg_sqn: %u  pkt_sqn: %u\n", i+1, (uint32_t*) cur, *((uint32_t*)cur + 10), *((uint32_t*)cur+11), *((uint32_t*)cur+12));
         //*((uint32_t*)cur+40),*((uint32_t*)cur+44),*((uint32_t*)cur+48));

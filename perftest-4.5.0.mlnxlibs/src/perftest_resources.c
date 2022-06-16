@@ -1576,8 +1576,8 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 	}
 
 	if (ctx->is_contig_supported == SUCCESS)
-		ctx->buf[qp_index] = (void*)malloc(ctx->buff_size);
-		//ctx->buf[qp_index] = ctx->mr[qp_index]->addr;
+		ctx->buf[qp_index] = ctx->mr[qp_index]->addr;
+		//ctx->buf[qp_index] = (void*)malloc(ctx->buff_size);
 
 
 	/* Initialize buffer with random numbers except in WRITE_LAT test that it 0's */
@@ -3382,14 +3382,13 @@ printf("Pre-posting of RR: %d\n", size_per_qp);
 		if (!user_param->mr_per_qp) {
 			ctx->recv_sge_list[i].addr  = (uintptr_t)ctx->buf[0] +
 				(num_of_qps + k) * ctx->send_qp_buff_size;
-      //printf("[DEBUG] ctx->recv_sge_list[i].addr: %lx,   ctx->buf[0]: %p,  ctx->send_qp_buff_size: %lu\n", ctx->recv_sge_list[i].addr, ctx->buf[0], ctx->send_qp_buff_size);
 		} else {
 			ctx->recv_sge_list[i].addr  = (uintptr_t)ctx->buf[i];
 		}
 
 		if (user_param->connection_type == UD){
 			ctx->recv_sge_list[i].addr += (ctx->cache_line_size - UD_ADDITION);
-      //printf("[DEBUG] ctx->recv_sge_list[i].addr: %lx, ctx->cache_line_size: %d,  UD_ADDITION: %d   \n", ctx->recv_sge_list[i].addr, ctx->cache_line_size, UD_ADDITION);
+      printf("[DEBUG] ctx->recv_sge_list[i].addr: %lx, ctx->cache_line_size: %d,  UD_ADDITION: %d   \n", ctx->recv_sge_list[i].addr, ctx->cache_line_size, UD_ADDITION);
     }
 
     // MPRUD add 40 bytes for GRH header if UD

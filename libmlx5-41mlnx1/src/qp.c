@@ -2400,7 +2400,7 @@ int mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
     int last_size = size % MPRUD_DEFAULT_MTU;
     split_num = (last_size ? size/MPRUD_DEFAULT_MTU + 1 : size/MPRUD_DEFAULT_MTU);
     int ne;
-    char* sbuf = mprud_get_buffer();
+    char* sbuf = mprud_get_inner_buffer();
 
     if (MG_DEBUG_BUFFER)
       printf("[DEBUG] sbuf: %p\tsg_list->addr: %lx\n", sbuf, wr->sg_list->addr);//, (uint64_t)sbuf - wr->sg_list->addr);
@@ -2408,8 +2408,8 @@ int mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
     struct ibv_wc *wc = NULL;
     ALLOCATE(wc, struct ibv_wc, MPRUD_POLL_BATCH);
 
-    //printf("\n----------------------------------------\n");
     if (MG_DEBUG){
+      printf("\n----------------------------------------\n");
       printf("Split into %d post_sends. Last msg: %d bytes.\n", split_num, last_size);
       printf("recv_size=%d | send_size=%d | cq_size=%d\n", recv_size, send_size, cq_size);
     }
@@ -2466,8 +2466,8 @@ int mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
       tmp_sge->addr = (uint64_t) cur; 
       tmp_sge->length = MPRUD_SEND_BUF_OFFSET;
 
-      if (i == split_num - 1 && last_size)
-        tmp_sge->length = MPRUD_HEADER_SIZE + last_size;
+//      if (i == split_num - 1 && last_size)
+//        tmp_sge->length = MPRUD_HEADER_SIZE + last_size;
 
       tmp_wr->sg_list = tmp_sge; 
 
@@ -2504,14 +2504,6 @@ int mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
               fprintf(stderr, "[MPRUD] Poll send CQ error status=%u qp %d\n", wc[i].status,(int)wc[i].wr_id);
             }
           }
-          // Check buffer
-          if (MG_DEBUG_BUFFER){
-            for(int i=polled_cnt-ne; i<polled_cnt; i++){
-              char* cur = mprud_get_buffer() + i *  MPRUD_SEND_BUF_OFFSET;
-              printf("cur addr: %p sid=%u   msg_sqn: %u  pkt_sqn: %u\n",(uint32_t*) cur, *(uint32_t*)cur, *((uint32_t*)cur+1), *((uint32_t*)cur+2));
-            }
-          }
-
         } else if (ne < 0){
           fprintf(stderr, "[MPRUD] IPS poll CQ failed %d\n", ne);
           free(wc);
@@ -2521,7 +2513,7 @@ int mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 /*      // Check buffer
       if (MG_DEBUG_BUFFER){
         for(int i=0; i<polled_cnt; i++){
-          char* cur = mprud_get_buffer() + i *  MPRUD_SEND_BUF_OFFSET;
+          char* cur = mprud_get_inner_buffer() + i *  MPRUD_SEND_BUF_OFFSET;
           printf("cur addr: %p sid=%u   msg_sqn: %u  pkt_sqn: %u\n", cur, *(cur), *(cur+4), *(cur+8));
         }
       }*/
@@ -2652,7 +2644,7 @@ int mlx5_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
     int last_size = size % MPRUD_DEFAULT_MTU;
     split_num = (last_size ? size/MPRUD_DEFAULT_MTU + 1 : size/MPRUD_DEFAULT_MTU);
     int ne;
-    char* rbuf = mprud_get_buffer();
+    char* rbuf = mprud_get_inner_buffer();
 
     if (MG_DEBUG_BUFFER)
       printf("[DEBUG] rbuf: %p\tsg_list->addr: %lx\n", rbuf, wr->sg_list->addr);//, (uint64_t)rbuf - wr->sg_list->addr);
@@ -2698,8 +2690,8 @@ int mlx5_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
       tmp_sge->addr = (uint64_t)cur;
       tmp_sge->length = MPRUD_RECV_BUF_OFFSET; 
 
-      if (i == split_num - 1 && last_size)
-        tmp_sge->length = MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + last_size;
+//      if (i == split_num - 1 && last_size)
+//        tmp_sge->length = MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + last_size;
 
       if (MG_DEBUG_BUFFER)
         printf("[MPRUD] Msg #%d) addr: %lx\tlength: %u\n", i, tmp_sge->addr, tmp_sge->length); 
@@ -2730,11 +2722,7 @@ int mlx5_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
           // Check buffer
           if (MG_DEBUG_BUFFER){
              printf("\n---------- PRINT BUFFER [pre-inner polling] -----------\n");
-             mprud_print_buffer();
-            /*for(int i=polled_cnt-ne; i<polled_cnt; i++){
-              char* cur = mprud_get_buffer() + i *  MPRUD_RECV_BUF_OFFSET;
-              printf("cur addr: %p sid=%u   msg_sqn: %u  pkt_sqn: %u\n", cur, *(cur+40), *(cur+44), *(cur+48));
-            }*/
+             mprud_print_inner_buffer();
           }
 
         } else if (ne < 0){
@@ -2756,7 +2744,7 @@ int mlx5_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
     return SUCCESS;
   }
   if (MG_DEBUG)
-     printf("MPRUD DISABLED!\n");
+     printf("************** MPRUD DISABLED! **************\n");
 
   /* End of my code */
   return mlx5_post_recv2(ibqp, wr, bad_wr);

@@ -1,5 +1,0 @@
-make  all-am
-make[1]: Entering directory '/home/mingman/MPRUD-hooking/perftest-4.5.0.mlnxlibs'
-  CC       src/send_bw.o
-  CCLD     ib_send_bw
-make[1]: Leaving directory '/home/mingman/MPRUD-hooking/perftest-4.5.0.mlnxlibs'

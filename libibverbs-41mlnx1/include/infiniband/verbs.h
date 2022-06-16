@@ -1463,6 +1463,10 @@ void ibv_ack_cq_events(struct ibv_cq *cq, unsigned int nevents);
 static inline int ibv_poll_cq(struct ibv_cq *cq, int num_entries, struct ibv_wc *wc)
 {
   //MPRUD by mingman~
+  /**
+   * This is the very first part when App calls ibv_poll_cq.
+   * Thus, it should be led to MPRUD polling --> mprud_skip = 0.
+   **/
 	//return cq->context->ops.poll_cq(cq, num_entries, wc);
 	return cq->context->ops.poll_cq(cq, num_entries, wc, 0);
   //~MPRUD by mingman

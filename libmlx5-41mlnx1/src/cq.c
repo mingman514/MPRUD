@@ -1498,7 +1498,6 @@ int mlx5_poll_cq_1(struct ibv_cq *ibcq, int ne, struct ibv_wc *wc, uint32_t skip
   if(!skip_mprud)
     return mprud_poll_cq(ibcq, ne, wc);
 //~MPRUD by mingman
- 
 	return poll_cq(ibcq, ne, (struct ibv_exp_wc *)wc, sizeof(*wc), 1);
 }
 

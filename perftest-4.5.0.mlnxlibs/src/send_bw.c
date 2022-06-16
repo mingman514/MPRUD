@@ -621,7 +621,7 @@ int main(int argc, char *argv[])
 
   } else {
     printf("------------ BUFFER MSG -----------\n");
-    printf("%s -- (%p)\n", (char*)ctx.buf[0]);
+    printf("%s -- (%p)\n", (char*)ctx.buf[0], (char*)ctx.buf[0]);
   }
 
 	if (ctx_close_connection(&user_comm,&my_dest[0],&rem_dest[0])) {

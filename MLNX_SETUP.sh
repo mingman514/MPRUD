@@ -12,3 +12,7 @@ sysctl -w net.ipv4.tcp_ecn=1
 sleep 2
 echo 106 > /sys/class/infiniband/mlx5_1/tc/1/traffic_class
 cat /sys/class/infiniband/mlx5_1/tc/1/traffic_class
+
+# CPU freq
+#sudo cpupower frequency-set -d 4900Mhz # min
+#sudo cpupower frequency-set -u 4900Mhz # max

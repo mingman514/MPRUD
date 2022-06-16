@@ -78,9 +78,10 @@ IBVERBS_1.0 {
 
     mprud_create_ah_list;
     mprud_get_ah_list;
-    mprud_get_buffer;
+    mprud_get_inner_buffer;
+    mprud_get_outer_buffer;
     mprud_poll_cq;
-    mprud_print_buffer;
+    mprud_print_inner_buffer;
 
     posted_cnt;
     polled_cnt;
@@ -163,7 +164,8 @@ IBVERBS_1.1 {
     
     mprud_create_ah_list;
     mprud_get_ah_list;
-    mprud_get_buffer;
+    mprud_get_inner_buffer;
+    mprud_get_outer_buffer;
     mprud_poll_cq;
     mprud_print_buffer;
 
