@@ -32,15 +32,16 @@
 #define MPRUD_BUF_SPLIT_NUM 1024    // Set as default QP size
 #define MPRUD_GRH_SIZE 40
 #define MPRUD_DEFAULT_MTU 4096
-#define MPRUD_POLL_BATCH 16
+//#define MPRUD_RECV_TARGET_ADDR 8
 #define MPRUD_SEND_BUF_OFFSET (MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU)
 #define MPRUD_RECV_BUF_OFFSET (MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU)
+#define MPRUD_POLL_BATCH 16
 
 #define SUCCESS (0)
 #define FAILURE (1)
 
 #define MG_DEBUG 1
-#define MG_DEBUG_BUFFER 0
+#define MG_DEBUG_BUFFER 1
 #define MG_DEBUG_POLL 1
 #define MG_DEBUG_AH 1
 
@@ -48,7 +49,7 @@
 extern uint64_t posted_cnt, polled_cnt; // total inner post/poll counts
 extern uint64_t ack_posted_cnt, ack_polled_cnt;
 extern uint64_t outer_polled_cnt;
-extern int split_num;   // number of splitted requests
+extern int split_num, last_size;   // number of splitted requests
 extern int recv_size, send_size, cq_size;
 
 struct ibv_ah** mprud_get_ah_list();

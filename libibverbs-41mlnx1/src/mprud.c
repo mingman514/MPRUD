@@ -23,6 +23,8 @@
 uint64_t posted_cnt = 0, polled_cnt = 0;
 int recv_size = 0, send_size = 0, cq_size = 0;
 int split_num = 1;   // number of splitted requests
+int last_size = 0;
+static uint64_t cur_idx = 0; // accumulated(total) outer polled cnt
 
 char *inner_buf = NULL;
 char *outer_buf = NULL;
@@ -161,49 +163,76 @@ void mprud_set_outer_buffer(void* ptr)
 
 int mprud_poll_cq(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc)
 {
-  // App-only polling here
-  uint32_t outer_poll_num = MIN(polled_cnt/split_num, ne);
+  char *env = getenv("ENABLE_MPRUD");
+  if (env && atoi(env)){
+    // App-only polling here
+    uint32_t outer_poll_num = MIN(polled_cnt/split_num, ne);
 
-  if (MG_DEBUG_POLL && outer_poll_num > 0){
-    printf("[Outer Poll]  posted_cnt: %lu  polled_cnt: %lu  split_num:%d\n", posted_cnt, polled_cnt, split_num);
-    printf("\t-->Outer Poll: %u\n", outer_poll_num);
-  }
+    if (MG_DEBUG_POLL && outer_poll_num > 0){
+      printf("[Outer Poll]  posted_cnt: %lu  polled_cnt: %lu  split_num:%d\n", posted_cnt, polled_cnt, split_num);
+      printf("\t-->Outer Poll: %u\n", outer_poll_num);
+    }
 
-  if (outer_poll_num > 0){
-    for (int i=0; i<outer_poll_num; i++){
-      wc[i].wr_id = 0;
-      wc[i].status = IBV_WC_SUCCESS;
-    }      
-    posted_cnt -= split_num * outer_poll_num;
-    polled_cnt -= split_num * outer_poll_num;
+    if (outer_poll_num > 0){
+      for (int i=0; i<outer_poll_num; i++){
+        wc[i].wr_id = 0;
+        wc[i].status = IBV_WC_SUCCESS;
+      }      
+      posted_cnt -= split_num * outer_poll_num;
+      polled_cnt -= split_num * outer_poll_num;
 
-    return outer_poll_num;
-  }
+      // Copy data to outer buffer
+      mprud_syn_buffer(outer_poll_num);
 
-  struct ibv_wc tmp_wc[MPRUD_POLL_BATCH];
-  memset(tmp_wc, 0, sizeof(struct ibv_wc) * MPRUD_POLL_BATCH);
-  if (posted_cnt > polled_cnt){
-    uint32_t now_polled = cq->context->ops.poll_cq(cq, MPRUD_POLL_BATCH, tmp_wc, 1); // Go to original poll_cq
+      return outer_poll_num;
+    }
 
-    if (MG_DEBUG_BUFFER)
-      mprud_print_inner_buffer();
+    struct ibv_wc tmp_wc[MPRUD_POLL_BATCH];
+    memset(tmp_wc, 0, sizeof(struct ibv_wc) * MPRUD_POLL_BATCH);
+    if (posted_cnt > polled_cnt){
+      uint32_t now_polled = cq->context->ops.poll_cq(cq, MPRUD_POLL_BATCH, tmp_wc, 1); // Go to original poll_cq
 
-    if (now_polled > 0){
-      printf("[Inner Poll] %d\n", now_polled);
-      polled_cnt += now_polled;
-      for (int i = 0; i < now_polled; i++) {
-        if (tmp_wc[i].status != IBV_WC_SUCCESS) {
-          fprintf(stderr, "[MPRUD] Poll send CQ error status=%u qp %d\n", tmp_wc[i].status,(int)tmp_wc[i].wr_id);
+//      if (MG_DEBUG_BUFFER)
+//        mprud_print_inner_buffer();
+
+      if (now_polled > 0){
+        printf("[Inner Poll] %d\n", now_polled);
+        polled_cnt += now_polled;
+        for (int i = 0; i < now_polled; i++) {
+          if (tmp_wc[i].status != IBV_WC_SUCCESS) {
+            fprintf(stderr, "[MPRUD] Poll send CQ error status=%u qp %d\n", tmp_wc[i].status,(int)tmp_wc[i].wr_id);
+          }
         }
+      } else if (now_polled < 0){
+        printf("ERROR: Polling result is negative!\n");
       }
-    } else if (now_polled < 0){
-      printf("ERROR: Polling result is negative!\n");
-      return now_polled;
+    }
+    return 0;
+  } else {
+    // Original Polling Goes Here
+    return cq->context->ops.poll_cq(cq, ne, wc, 1);
+  }
+}
+
+void mprud_syn_buffer(int outer_poll_num)
+{
+  char* inner_buf = mprud_get_inner_buffer();
+  char* outer_buf = mprud_get_outer_buffer();
+  char* cur;
+
+  for (int i = 0; i < outer_poll_num; i++){
+    for (int j = 0; j < split_num; j++, cur_idx++){
+      cur_idx = cur_idx % MPRUD_BUF_SPLIT_NUM;
+      cur = inner_buf + cur_idx * MPRUD_RECV_BUF_OFFSET;
+
+      memcpy(outer_buf + (j * MPRUD_DEFAULT_MTU), cur + MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE,(j == split_num - 1 ? last_size: MPRUD_DEFAULT_MTU));
+      if(MG_DEBUG_BUFFER)
+        printf("cur_idx: %d  inner_cur: %p   outer_cur: %p\n", cur_idx, cur, outer_buf + (j * MPRUD_DEFAULT_MTU));
     }
   }
 
-  return 0;
 }
+
 
 void mprud_set_recv_size(int size)
 {

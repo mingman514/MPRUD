@@ -397,8 +397,14 @@ struct ibv_mr *__ibv_exp_reg_mr(struct ibv_exp_reg_mr_in *in)
     // set inner buffer addr  
     mprud_set_inner_buffer(new_in.addr);
 
+    /**
+     * Must assign the original buffer address when returning MR.
+     * App will use the buffer address in this MR.
+     * (Can access inner & outer buffer since stored those addresses already)
+     */
     inner_mr->addr = in->addr;
-    printf("outer: %p   inner: %p\n", mprud_get_outer_buffer(), mprud_get_inner_buffer() );
+    if (MG_DEBUG_BUFFER)
+      printf("outer: %p   inner: %p\n", mprud_get_outer_buffer(), mprud_get_inner_buffer() );
 
     return inner_mr;
   }
@@ -751,8 +757,8 @@ qp_init_attr->cap.max_recv_wr = 1024;
 
  //qp_init_attr->cap.max_send_wr = 10000;
   //MPRUD by mingman~
-  qp_init_attr->cap.max_send_wr = 128;
-  qp_init_attr->cap.max_recv_wr = 512;
+//  qp_init_attr->cap.max_send_wr = 128;
+//  qp_init_attr->cap.max_recv_wr = 512;
 
   
   //~MPRUD by mingman

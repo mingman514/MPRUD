@@ -88,6 +88,7 @@ IBVERBS_1.0 {
     ack_posted_cnt;
     ack_polled_cnt;
     split_num;
+    last_size;
     recv_size;
     send_size;
     cq_size;
@@ -174,6 +175,7 @@ IBVERBS_1.1 {
     ack_posted_cnt;
     ack_polled_cnt;
     split_num;
+    last_size;
     recv_size;
     send_size;
     cq_size;

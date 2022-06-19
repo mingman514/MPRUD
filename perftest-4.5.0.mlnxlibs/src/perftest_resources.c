@@ -1587,11 +1587,16 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 			memset(ctx->buf[qp_index], 0, ctx->buff_size);
 		} else {
       // MPRUD both sender & receiver passes here
-			for (i = 0; i < ctx->buff_size; i++) {
-			// memset(ctx->buf[qp_index], 0, ctx->buff_size);
-			//	((char*)ctx->buf[qp_index])[i] = (char)rand();
-      strcpy(ctx->buf[qp_index], "INITIAL STATE");
-			}
+			/*for (i = 0; i < ctx->buff_size; i++) {
+				((char*)ctx->buf[qp_index])[i] = (char)rand();
+			}*/
+
+      //MPRUD by mingman~
+      if(user_param->machine == SERVER)
+        strcpy(ctx->buf[qp_index], "SERVER INITIAL STATE");
+      else
+        strcpy(ctx->buf[qp_index], "CLIENT INITIAL STATE");
+      //~MPRUD by mingman
 		}
 	}
 

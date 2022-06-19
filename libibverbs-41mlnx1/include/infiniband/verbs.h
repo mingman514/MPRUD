@@ -1468,7 +1468,7 @@ static inline int ibv_poll_cq(struct ibv_cq *cq, int num_entries, struct ibv_wc 
    * Thus, it should be led to MPRUD polling --> mprud_skip = 0.
    **/
 	//return cq->context->ops.poll_cq(cq, num_entries, wc);
-	return cq->context->ops.poll_cq(cq, num_entries, wc, 0);
+  return cq->context->ops.poll_cq(cq, num_entries, wc, 0);
   //~MPRUD by mingman
 }
 
