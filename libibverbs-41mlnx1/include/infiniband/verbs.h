@@ -42,6 +42,8 @@
 #include <errno.h>
 #include <infiniband/ofa_verbs.h>
 #include <string.h>
+//MPRUD
+#include <infiniband/mprud_opt.h>
 
 #ifdef __cplusplus
 #  define BEGIN_C_DECLS extern "C" {
@@ -1045,8 +1047,11 @@ struct ibv_context_ops {
 					     struct ibv_comp_channel *channel,
 					     int comp_vector);
   //MPRUD by mingman~
-	//int			(*poll_cq)(struct ibv_cq *cq, int num_entries, struct ibv_wc *wc);
+#ifdef USE_MPRUD
 	int			(*poll_cq)(struct ibv_cq *cq, int num_entries, struct ibv_wc *wc, uint32_t skip_mprud);
+#else
+	int			(*poll_cq)(struct ibv_cq *cq, int num_entries, struct ibv_wc *wc);
+#endif
   //~MPRUD by mingman
 	int			(*req_notify_cq)(struct ibv_cq *cq, int solicited_only);
 	void			(*cq_event)(struct ibv_cq *cq);
@@ -1467,8 +1472,11 @@ static inline int ibv_poll_cq(struct ibv_cq *cq, int num_entries, struct ibv_wc 
    * This is the very first part when App calls ibv_poll_cq.
    * Thus, it should be led to MPRUD polling --> mprud_skip = 0.
    **/
-	//return cq->context->ops.poll_cq(cq, num_entries, wc);
+#ifdef USE_MPRUD
   return cq->context->ops.poll_cq(cq, num_entries, wc, 0);
+#else
+	return cq->context->ops.poll_cq(cq, num_entries, wc);
+#endif
   //~MPRUD by mingman
 }
 

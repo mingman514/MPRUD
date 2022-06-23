@@ -41,6 +41,7 @@
 #include <alloca.h>
 
 #include "ibverbs.h"
+#include <infiniband/mprud_opt.h>
 
 struct ibv_pd_1_0 {
 	struct ibv_context_1_0 *context;
@@ -292,13 +293,16 @@ uint64_t __ibv_get_device_guid_1_0(struct ibv_device_1_0 *device)
 }
 symver(__ibv_get_device_guid_1_0, ibv_get_device_guid, IBVERBS_1.0);
 
-static int poll_cq_wrapper_1_0(struct ibv_cq_1_0 *cq, int num_entries,
-//MPRUD by mingman~
-//			       struct ibv_wc *wc)
-			       struct ibv_wc *wc, uint32_t skip_mprud)
+//MPRUD by mingman~ 
+#ifdef USE_MPRUD
+static int poll_cq_wrapper_1_0(struct ibv_cq_1_0 *cq, int num_entries, struct ibv_wc *wc, uint32_t skip_mprud)
 {
-	//return cq->context->real_context->ops.poll_cq(cq->real_cq, num_entries, wc);
 	return cq->context->real_context->ops.poll_cq(cq->real_cq, num_entries, wc, skip_mprud);
+#else
+static int poll_cq_wrapper_1_0(struct ibv_cq_1_0 *cq, int num_entries, struct ibv_wc *wc)
+{
+	return cq->context->real_context->ops.poll_cq(cq->real_cq, num_entries, wc);
+#endif
 //~MPRUD by mingman
 }
 

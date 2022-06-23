@@ -51,7 +51,9 @@
 #endif
 
 // MPRUD by mingman
+#ifdef USE_MPRUD
 #include <infiniband/mprud.h>
+#endif
 
 int ibv_rate_to_mult(enum ibv_rate rate)
 {
@@ -224,7 +226,9 @@ default_symver(__ibv_alloc_pd, ibv_alloc_pd);
 int __ibv_dealloc_pd(struct ibv_pd *pd)
 {
   // MPRUD by mingman 
+#ifdef USE_MPRUD
   mprud_destroy_ah_list();
+#endif 
 	return pd->context->ops.dealloc_pd(pd);
 }
 default_symver(__ibv_dealloc_pd, ibv_dealloc_pd);
@@ -375,39 +379,39 @@ struct ibv_mr *__ibv_exp_reg_mr(struct ibv_exp_reg_mr_in *in)
    *  allocate memory to buffer.
    *  Since Perftest app sets 'IBV_EXP_ACCESS_ALLOCATE_MR' Flag.
    */
-  char *env = getenv("ENABLE_MPRUD");
-  if (env && atoi(env)){
-    // set outer buffer addr
-    in->addr = malloc(in->length);  // type casting is needed?
-    mprud_set_outer_buffer(in->addr);
+#ifdef USE_MPRUD
+  // set outer buffer addr
+  in->addr = malloc(in->length);  // type casting is needed?
+  mprud_set_outer_buffer(in->addr);
 
-    printf("[MPRUD] Create inner buffer\n");
-    struct ibv_exp_reg_mr_in new_in;
-    new_in = *(in);
-    new_in.addr = NULL;
-    new_in.length = (MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU) * MPRUD_BUF_SPLIT_NUM; 
-     if (MG_DEBUG_BUFFER)
-       printf("[DEBUG] ibv_reg_mr: (Outer buffer)in.length=%d --> (Inner buffer)mprudlen=%d\n", in->length, new_in.length);
-	
-    struct ibv_mr *inner_mr = __ibv_common_reg_mr(&new_in, ctx);
+  printf("[MPRUD] Create inner buffer\n");
+  struct ibv_exp_reg_mr_in new_in;
+  new_in = *(in);
+  new_in.addr = NULL;
+  new_in.length = (MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU) * MPRUD_BUF_SPLIT_NUM; 
+#ifdef MG_DEBUG_MODE
+    printf("[DEBUG] ibv_reg_mr: (Outer buffer)in.length=%d --> (Inner buffer)mprudlen=%d\n", in->length, new_in.length);
+#endif
 
-    if (! inner_mr)
-      fprintf(stderr, "Couldn't allocate inner MR\n");
-	
-    // set inner buffer addr  
-    mprud_set_inner_buffer(new_in.addr);
+  struct ibv_mr *inner_mr = __ibv_common_reg_mr(&new_in, ctx);
 
-    /**
-     * Must assign the original buffer address when returning MR.
-     * App will use the buffer address in this MR.
-     * (Can access inner & outer buffer since stored those addresses already)
-     */
-    inner_mr->addr = in->addr;
-    if (MG_DEBUG_BUFFER)
-      printf("outer: %p   inner: %p\n", mprud_get_outer_buffer(), mprud_get_inner_buffer() );
+  if (! inner_mr)
+    fprintf(stderr, "Couldn't allocate inner MR\n");
 
-    return inner_mr;
-  }
+  // set inner buffer addr  
+  mprud_set_inner_buffer(new_in.addr);
+
+  /**
+   * Must assign the original buffer address when returning MR.
+   * App will use the buffer address in this MR.
+   * (Can access inner & outer buffer since stored those addresses already)
+   */
+  inner_mr->addr = in->addr;
+  if (MG_DEBUG_BUFFER)
+    printf("outer: %p   inner: %p\n", mprud_get_outer_buffer(), mprud_get_inner_buffer() );
+
+  return inner_mr;
+#endif
   //~MPRUD by mingman
 
   return __ibv_common_reg_mr(in, ctx);
@@ -422,17 +426,16 @@ struct ibv_mr *__ibv_reg_mr(struct ibv_pd *pd, void *addr,
 	in.pd = pd;
 	in.addr = addr;
 	in.length = length;
-	in.exp_access = access;
+  in.exp_access = access;
 
   //MPRUD by mingman~
-  char *env = getenv("ENABLE_MPRUD");
-  if (env && atoi(env)){
-    printf("[MPRUD] Create inner buffer\n");
-    in.addr = mprud_get_inner_buffer();
-    in.length = (MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU) * MPRUD_BUF_SPLIT_NUM; 
-    if (MG_DEBUG_BUFFER)
-      printf("[DEBUG] ibv_reg_mr: (Outer buffer)in.length=%d --> (Inner buffer)mprudlen=%d\n", length, in.length);
-  }
+#ifdef USE_MPRUD
+  printf("[MPRUD] Create inner buffer\n");
+  in.addr = mprud_get_inner_buffer();
+  in.length = (MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU) * MPRUD_BUF_SPLIT_NUM; 
+  if (MG_DEBUG_BUFFER)
+    printf("[DEBUG] ibv_reg_mr: (Outer buffer)in.length=%d --> (Inner buffer)mprudlen=%d\n", length, in.length);
+#endif
   //~MPRUD by mingman
 
 	return __ibv_common_reg_mr(&in, NULL);
@@ -616,7 +619,9 @@ struct ibv_cq *__ibv_create_cq(struct ibv_context *context, int cqe, void *cq_co
 	pthread_mutex_lock(&context->mutex);
   
   //MPRUD by mingman
+#ifdef USE_MPRUD
   cqe = 1023;
+#endif
   // change cqe size here
   //cqe = 1023;
 
@@ -767,8 +772,11 @@ qp_init_attr->cap.max_recv_wr = 1024;
 
  
   //MPRUD by mingman~
-  if (mprud_create_ah_list(pd, qp_init_attr))
-  
+#ifdef USE_MPRUD
+  if (mprud_create_ah_list(pd, qp_init_attr)){
+    return NULL;
+  }
+#endif
   //~MPRUD by mingman
 	if (qp) {
 		qp->context    	     = pd->context;
@@ -784,6 +792,7 @@ qp_init_attr->cap.max_recv_wr = 1024;
 		pthread_cond_init(&qp->cond, NULL);
 	}
 
+#ifdef USE_MPRUD
   if (1){
        // TEMP
        struct ibv_qp_attr attr;
@@ -800,6 +809,7 @@ qp_init_attr->cap.max_recv_wr = 1024;
   mprud_set_recv_size(init_attr.cap.max_recv_wr);
   mprud_set_cq_size(qp->recv_cq->cqe);
        }
+#endif
 
 	return qp;
 }
