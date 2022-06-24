@@ -3,21 +3,18 @@
 #include <arpa/inet.h>
 #include <stdlib.h>
 
-/**
- * To fix
- * - Deallocate PD Fail -> maybe due to newly created ah_list?
- *   (solved): added mprud_destroy_ah_list func right before dealloc_pd.
- */
-// post & poll measure
+
+struct mprud_context mpctx;
 uint64_t posted_cnt = 0, polled_cnt = 0;
 int recv_size = 0, send_size = 0, cq_size = 0;
-int split_num = 1;   // number of splitted requests
 int last_size = 0;
-static uint64_t cur_idx = 0; // accumulated(total) outer polled cnt
-
+int split_num = 1;   // number of splitted requests
 char *inner_buf = NULL;
 char *outer_buf = NULL;
-static struct ibv_ah* ah_list[MPRUD_NUM_PATH];
+struct ibv_ah* ah_list[MPRUD_NUM_PATH];
+
+static uint64_t cur_idx = 0; // accumulated(total) outer polled cnt
+
 static char REMOTE_GIDS[4][50] = {
   "0000:0000:0000:0000:0000:ffff:0a00:6503", // 10.0.101.3 spine-1
   "0000:0000:0000:0000:0000:ffff:0a00:6504", // 10.0.101.4 spine-2
@@ -28,6 +25,14 @@ static char REMOTE_GIDS[4][50] = {
   //  "0000:0000:0000:0000:0000:ffff:0a00:c904", // 10.0.201.4 spine-3
   //  "0000:0000:0000:0000:0000:ffff:0a00:c905", // 10.0.201.5 spine-4
 };
+
+
+void mprud_init_ctx()
+{
+  // Add other member variables later
+  mpctx.split_num = 1;
+  // ....  
+}
 
 struct ibv_ah** mprud_get_ah_list()
 {
@@ -63,6 +68,22 @@ uint8_t *convert_to_raw_gid(uint8_t *gid, char* str_gid)
     //printf("gid [%d]=%d\n", i, gid[i]);
   }
   return gid;
+}
+
+int mprud_create_inner_qps(struct ibv_pd *pd, struct ibv_qp_init_attr *qp_init_attr)
+{
+  for (int i = 0; i < MPRUD_NUM_PATH; i++){
+    struct ibv_cq *send_cq, *recv_cq;
+    qp_init_attr->send_cq = send_cq;
+    qp_init_attr->recv_cq = recv_cq;
+    qp_init_attr->qp_type = IBV_QPT_UD;
+
+    // create individual cqs???
+    mpctx.inner_qps[i] = (struct ibv_qp*)calloc(1, sizeof(struct ibv_qp));
+    mpctx.inner_qps[i] = pd->context->ops.create_qp(pd, qp_init_attr);   
+  }
+
+  return SUCCESS;
 }
 
 int mprud_create_ah_list(struct ibv_pd *pd,

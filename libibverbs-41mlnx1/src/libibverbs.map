@@ -76,6 +76,7 @@ IBVERBS_1.0 {
 		ibv_get_sysfs_path;
 		ibv_read_sysfs_file;
 
+    mprud_create_inner_qps;
     mprud_create_ah_list;
     mprud_get_ah_list;
     mprud_get_inner_buffer;
@@ -83,6 +84,7 @@ IBVERBS_1.0 {
     mprud_poll_cq;
     mprud_print_inner_buffer;
 
+    mpctx;
     posted_cnt;
     polled_cnt;
     ack_posted_cnt;
@@ -163,13 +165,15 @@ IBVERBS_1.1 {
 		ibv_exp_cmd_alloc_dm;
 		ibv_exp_cmd_free_dm;
     
+    mprud_create_inner_qps;
     mprud_create_ah_list;
     mprud_get_ah_list;
     mprud_get_inner_buffer;
     mprud_get_outer_buffer;
     mprud_poll_cq;
     mprud_print_buffer;
-
+    
+    mpctx;
     posted_cnt;
     polled_cnt;
     ack_posted_cnt;

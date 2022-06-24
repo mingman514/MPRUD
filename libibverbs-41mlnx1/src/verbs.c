@@ -771,13 +771,6 @@ qp_init_attr->cap.max_recv_wr = 1024;
 	struct ibv_qp *qp = pd->context->ops.create_qp(pd, qp_init_attr);
 
  
-  //MPRUD by mingman~
-#ifdef USE_MPRUD
-  if (mprud_create_ah_list(pd, qp_init_attr)){
-    return NULL;
-  }
-#endif
-  //~MPRUD by mingman
 	if (qp) {
 		qp->context    	     = pd->context;
 		qp->qp_context 	     = qp_init_attr->qp_context;
@@ -791,10 +784,20 @@ qp_init_attr->cap.max_recv_wr = 1024;
 		pthread_mutex_init(&qp->mutex, NULL);
 		pthread_cond_init(&qp->cond, NULL);
 	}
+  //MPRUD by mingman~
+#ifdef USE_MPRUD
+  if (mprud_create_ah_list(pd, qp_init_attr)){
+    return NULL;
+  }
+  if (mprud_create_inner_qps(pd, qp_init_attr)){
+    return NULL;
+  }
+#endif
+  //~MPRUD by mingman
 
 #ifdef USE_MPRUD
+  // TEMP
   if (1){
-       // TEMP
        struct ibv_qp_attr attr;
          struct ibv_qp_init_attr init_attr;
          ibv_query_qp(qp,&attr, 0, &init_attr);
