@@ -746,30 +746,7 @@ default_symver(__ibv_destroy_srq, ibv_destroy_srq);
 struct ibv_qp *__ibv_create_qp(struct ibv_pd *pd,
 			       struct ibv_qp_init_attr *qp_init_attr)
 {
-  // QP size control
-/*
-  // qp increase send_max_wr, recv_max_wr
- printf("max_recv_wr = %u -->", qp_init_attr->cap.max_recv_wr);
-qp_init_attr->cap.max_recv_wr = 1024;
- printf("%u\n", qp_init_attr->cap.max_recv_wr);
-// qp_init_attr->cap.max_send_wr = 128;
-// qp_init_attr->cap.max_recv_wr = 10000;
-
- printf("max_send_wr = %u -->", qp_init_attr->cap.max_send_wr);
- qp_init_attr->cap.max_send_wr = 128;
- printf("%u\n", qp_init_attr->cap.max_send_wr);
-*/
-
- //qp_init_attr->cap.max_send_wr = 10000;
-  //MPRUD by mingman~
-//  qp_init_attr->cap.max_send_wr = 128;
-//  qp_init_attr->cap.max_recv_wr = 512;
-
-  
-  //~MPRUD by mingman
-
 	struct ibv_qp *qp = pd->context->ops.create_qp(pd, qp_init_attr);
-
  
 	if (qp) {
 		qp->context    	     = pd->context;
@@ -786,10 +763,16 @@ qp_init_attr->cap.max_recv_wr = 1024;
 	}
   //MPRUD by mingman~
 #ifdef USE_MPRUD
+  if (mprud_init_ctx()){
+    printf("MPRUD init_ctx failed.\n");
+    return NULL;
+  }
   if (mprud_create_ah_list(pd, qp_init_attr)){
+    printf("MPRUD create_ah_list failed.\n");
     return NULL;
   }
   if (mprud_create_inner_qps(pd, qp_init_attr)){
+    printf("MPRUD create_inner_qps failed.\n");
     return NULL;
   }
 #endif
@@ -803,6 +786,7 @@ qp_init_attr->cap.max_recv_wr = 1024;
          ibv_query_qp(qp,&attr, 0, &init_attr);
 
          printf("max send: %u |  max recv: %u | send_cqe: %u | recv_cqe: %u\n", init_attr.cap.max_send_wr, init_attr     .cap.max_recv_wr, qp->send_cq->cqe, qp->recv_cq->cqe);
+         printf("Outer QP --> qkey: %u qp_num: %u  dlid: %d  dest_qp_num: %u\n", attr.qkey, qp->qp_num, attr.ah_attr.dlid, attr.dest_qp_num);
   // Set recv&send qp size
 /*  mprud_set_send_size(qp_init_attr->cap.max_send_wr);
   mprud_set_recv_size(qp_init_attr->cap.max_recv_wr);
@@ -846,6 +830,12 @@ int __ibv_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 
 	if (attr_mask & IBV_QP_STATE)
 		qp->state = attr->qp_state;
+
+#ifdef USE_MPRUD
+  ret = mprud_modify_qp(qp, attr, attr_mask);
+  if (ret)
+    return ret;
+#endif
 
 	return 0;
 }

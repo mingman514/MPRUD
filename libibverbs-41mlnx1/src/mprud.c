@@ -1,17 +1,21 @@
 /*MPRUD by mingman*/
+
 #include <infiniband/mprud.h>
 #include <arpa/inet.h>
 #include <stdlib.h>
 
-
+// Global variable initialization
 struct mprud_context mpctx;
-uint64_t posted_cnt = 0, polled_cnt = 0;
+
+// Cleaning target later
+//uint64_t posted_cnt = 0, polled_cnt = 0;
 int recv_size = 0, send_size = 0, cq_size = 0;
 int last_size = 0;
 int split_num = 1;   // number of splitted requests
 char *inner_buf = NULL;
 char *outer_buf = NULL;
 struct ibv_ah* ah_list[MPRUD_NUM_PATH];
+
 
 static uint64_t cur_idx = 0; // accumulated(total) outer polled cnt
 
@@ -27,11 +31,14 @@ static char REMOTE_GIDS[4][50] = {
 };
 
 
-void mprud_init_ctx()
+int mprud_init_ctx()
 {
   // Add other member variables later
+  memset(&mpctx, 0 , sizeof(struct mprud_context));
   mpctx.split_num = 1;
+
   // ....  
+  return SUCCESS;
 }
 
 struct ibv_ah** mprud_get_ah_list()
@@ -72,17 +79,82 @@ uint8_t *convert_to_raw_gid(uint8_t *gid, char* str_gid)
 
 int mprud_create_inner_qps(struct ibv_pd *pd, struct ibv_qp_init_attr *qp_init_attr)
 {
-  for (int i = 0; i < MPRUD_NUM_PATH; i++){
-    struct ibv_cq *send_cq, *recv_cq;
-    qp_init_attr->send_cq = send_cq;
-    qp_init_attr->recv_cq = recv_cq;
-    qp_init_attr->qp_type = IBV_QPT_UD;
+  struct ibv_qp_init_attr iqp_init_attr;
+  memcpy(&iqp_init_attr, qp_init_attr, sizeof(struct ibv_qp_init_attr));
+  /* automatically allocate memory of cq & qp in verbs */
+  // One integrated send_cq is enough
+  struct ibv_cq *send_cq;
+  send_cq = pd->context->ops.create_cq(pd->context, 1023, NULL, 0);
 
-    // create individual cqs???
-    mpctx.inner_qps[i] = (struct ibv_qp*)calloc(1, sizeof(struct ibv_qp));
-    mpctx.inner_qps[i] = pd->context->ops.create_qp(pd, qp_init_attr);   
+  for (int i = 0; i < MPRUD_NUM_PATH; i++){
+    // Need recv_cq for each inner QPs
+    struct ibv_cq *recv_cq;
+    recv_cq = pd->context->ops.create_cq(pd->context, 1023, NULL, 0);
+
+    iqp_init_attr.send_cq = send_cq;
+    iqp_init_attr.recv_cq = recv_cq;
+    iqp_init_attr.qp_type = IBV_QPT_UD;
+
+    mpctx.inner_qps[i] = pd->context->ops.create_qp(pd, &iqp_init_attr);   
+    //printf("######### %p %p\n", mpctx.inner_qps[i]->send_cq,mpctx.inner_qps[i]->recv_cq);
   }
 
+  for(int i =0; i<MPRUD_NUM_PATH; i++){
+    struct ibv_qp_attr attr;
+    struct ibv_qp_init_attr init_attr;
+    ibv_query_qp(mpctx.inner_qps[i],&attr, 0, &init_attr);
+    printf("[%d] qkey: %u qp_num: %u  dlid: %d  dest_qp_num: %u\n", i, attr.qkey, mpctx.inner_qps[i]->qp_num, attr.ah_attr.dlid, attr.dest_qp_num);
+  } 
+
+  return SUCCESS;
+}
+
+int mprud_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr, int attr_mask)
+{
+  int ret;
+  struct ibv_qp_attr iqp_attr;
+  memcpy(&iqp_attr, attr, sizeof(struct ibv_qp_attr));
+
+  if (attr->qp_state == IBV_QPS_INIT){
+
+    // INIT
+    for (int i = 0; i < MPRUD_NUM_PATH; i++){
+
+        ret = qp->context->ops.modify_qp(mpctx.inner_qps[i], &iqp_attr, attr_mask);
+      if (ret){
+        printf("Failed to modify inner QP state to INIT\n");
+        return FAILURE;
+      }
+    }
+
+  } else if (attr->qp_state == IBV_QPS_RTR){
+
+    // RTR
+    for (int i = 0; i < MPRUD_NUM_PATH; i++){
+//      printf("BEFORE: dest_qp_num=%d\n", iqp_attr.dest_qp_num);
+//      //iqp_attr.dest_qp_num += 1;
+//      printf("AFTER: dest_qp_num=%d\n", iqp_attr.dest_qp_num);
+
+        ret = qp->context->ops.modify_qp(mpctx.inner_qps[i], &iqp_attr, attr_mask);
+      if (ret){
+        printf("Failed to modify inner QP state to RTR\n");
+        return FAILURE;
+      }
+    }
+    
+  } else if (attr->qp_state == IBV_QPS_RTS){
+
+    // RTS
+    for (int i = 0; i < MPRUD_NUM_PATH; i++){
+
+      ret = qp->context->ops.modify_qp(mpctx.inner_qps[i], &iqp_attr, attr_mask);
+      if (ret){
+        printf("Failed to modify inner QP state to RTS\n");
+        return FAILURE;
+      }
+    }
+
+  }
   return SUCCESS;
 }
 
@@ -142,7 +214,6 @@ int mprud_create_ah_list(struct ibv_pd *pd,
       return FAILURE;
     }
   }
-
   return SUCCESS;
 }
 char *mprud_get_inner_buffer()
@@ -172,7 +243,7 @@ void mprud_set_outer_buffer(void* ptr)
   outer_buf = ptr;
 }
 
-void mprud_syn_buffer(int outer_poll_num)
+static inline void mprud_syn_buffer(int outer_poll_num)
 {
   char* inner_buf = mprud_get_inner_buffer();
   char* outer_buf = mprud_get_outer_buffer();
@@ -192,68 +263,115 @@ void mprud_syn_buffer(int outer_poll_num)
 
 }
 
+// Splitted msg polling
+static inline int mprud_outer_poll(int ne, struct ibv_wc *wc, uint64_t *posted_cnt, uint64_t *polled_cnt, int Iam)
+{
+
+  // App-only polling here
+  uint32_t outer_poll_num = MIN(*polled_cnt/split_num, ne);
+
+#ifdef MG_DEBUG_MODE
+  if (outer_poll_num > 0){
+    printf("[Outer Poll]  posted_cnt: %llu  polled_cnt: %llu  split_num:%d\n", *posted_cnt, *polled_cnt, split_num);
+    printf("\t-->Outer Poll: %u\n", outer_poll_num);
+  }
+#endif
+
+  if (outer_poll_num > 0){
+    for (int i=0; i<outer_poll_num; i++){
+      wc[i].wr_id = 0;
+      wc[i].status = IBV_WC_SUCCESS;
+    }      
+    *posted_cnt -= split_num * outer_poll_num;
+    *polled_cnt -= split_num * outer_poll_num;
+
+    // Copy data to outer buffer
+    if (Iam == MP_SERVER)
+      mprud_syn_buffer(outer_poll_num);
+
+    return outer_poll_num;
+  }
+  return 0;
+}
+
+static inline int mprud_inner_poll(uint64_t *posted_cnt, uint64_t *polled_cnt, int Iam)
+{
+  int batch = 1;  // Try polling one WR for each inner qp
+
+  struct ibv_wc tmp_wc[batch];
+  memset(tmp_wc, 0, sizeof(struct ibv_wc) * batch);
+
+  if (*posted_cnt > *polled_cnt){
+
+    struct ibv_cq *cq = (Iam == MP_SERVER ? mpctx.inner_qps[mpctx.poll_turn]->recv_cq : mpctx.inner_qps[0]->send_cq);
+#ifdef USE_MPRUD
+    uint32_t now_polled = cq->context->ops.poll_cq(cq, batch, tmp_wc, 1); // Go to original poll_cq
+#else
+    uint32_t now_polled = cq->context->ops.poll_cq(cq, batch, tmp_wc);
+#endif
+
+
+    if (now_polled > 0){
+#ifdef MG_DEBUG_MODE
+      printf("[Inner Poll] %d\n", now_polled);
+      mprud_print_inner_buffer();
+#endif
+      *polled_cnt += now_polled;
+      // Move to next cq only when one polling was successful
+      if (Iam == MP_SERVER)
+        mpctx.poll_turn = (mpctx.poll_turn + 1) % MPRUD_NUM_PATH;
+
+      for (int i = 0; i < now_polled; i++) {
+        if (tmp_wc[i].status != IBV_WC_SUCCESS) {
+          fprintf(stderr, "[MPRUD] Poll send CQ error status=%u qp %d\n", tmp_wc[i].status,(int)tmp_wc[i].wr_id);
+        }
+      }
+    } else if (now_polled < 0){
+      printf("ERROR: Polling result is negative!\n");
+      return FAILURE;
+    }
+  }
+  return SUCCESS;
+}
 
 int mprud_poll_cq(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc)
 {
-  char *env = getenv("ENABLE_MPRUD");
-  if (env && atoi(env)){
-    // App-only polling here
-    uint32_t outer_poll_num = MIN(polled_cnt/split_num, ne);
+  uint64_t *posted_cnt, *polled_cnt;
+  int Iam;
 
-#ifdef MG_DEBUG_MODE
-    if (outer_poll_num > 0){
-      printf("[Outer Poll]  posted_cnt: %lu  polled_cnt: %lu  split_num:%d\n", posted_cnt, polled_cnt, split_num);
-      printf("\t-->Outer Poll: %u\n", outer_poll_num);
-    }
-#endif
+  if (mpctx.posted_rcnt.pkt > 0){ // send pkt
 
-    if (outer_poll_num > 0){
-      for (int i=0; i<outer_poll_num; i++){
-        wc[i].wr_id = 0;
-        wc[i].status = IBV_WC_SUCCESS;
-      }      
-      posted_cnt -= split_num * outer_poll_num;
-      polled_cnt -= split_num * outer_poll_num;
+    Iam = MP_SERVER;
+    posted_cnt = &mpctx.posted_rcnt.pkt; 
+    polled_cnt = &mpctx.polled_rcnt.pkt; 
 
-      // Copy data to outer buffer
-      mprud_syn_buffer(outer_poll_num);
+  } else if (mpctx.posted_scnt.pkt > 0){
 
-      return outer_poll_num;
-    }
+    Iam = MP_CLIENT;
+    posted_cnt = &mpctx.posted_scnt.pkt;
+    polled_cnt = &mpctx.polled_scnt.pkt;
 
-    struct ibv_wc tmp_wc[MPRUD_POLL_BATCH];
-    memset(tmp_wc, 0, sizeof(struct ibv_wc) * MPRUD_POLL_BATCH);
-    if (posted_cnt > polled_cnt){
-#ifdef USE_MPRUD
-      uint32_t now_polled = cq->context->ops.poll_cq(cq, MPRUD_POLL_BATCH, tmp_wc, 1); // Go to original poll_cq
-#else
-      uint32_t now_polled = cq->context->ops.poll_cq(cq, MPRUD_POLL_BATCH, tmp_wc);
-#endif
-
-      if (now_polled > 0){
-#ifdef MG_DEBUG_MODE
-        printf("[Inner Poll] %d\n", now_polled);
-        mprud_print_inner_buffer();
-#endif
-        polled_cnt += now_polled;
-        for (int i = 0; i < now_polled; i++) {
-          if (tmp_wc[i].status != IBV_WC_SUCCESS) {
-            fprintf(stderr, "[MPRUD] Poll send CQ error status=%u qp %d\n", tmp_wc[i].status,(int)tmp_wc[i].wr_id);
-          }
-        }
-      } else if (now_polled < 0){
-        printf("ERROR: Polling result is negative!\n");
-      }
-    }
-    return 0;
-  } else {
-    // Original Polling Goes Here
-#ifdef USE_MPRUD
-    return cq->context->ops.poll_cq(cq, ne, wc, 1);
-#else
-    return cq->context->ops.poll_cq(cq, ne, wc);
-#endif
   }
+#ifdef MG_DEBUG_MODE
+  else {
+    printf("Both pkt cnt is 0. Meaning it's done?\n");
+  }
+#endif
+
+  //************************
+  // OUTER POLLING
+  //************************
+  int outer_poll_num = mprud_outer_poll(ne, wc, posted_cnt, polled_cnt, Iam); 
+  if (outer_poll_num)
+    return outer_poll_num;
+
+  //************************
+  // INNER POLLING
+  //************************
+  if (mprud_inner_poll(posted_cnt, polled_cnt, Iam))
+    return -1;
+  
+  return 0;
 }
 
 
@@ -285,70 +403,7 @@ void mprud_print_inner_buffer()
     //*((uint32_t*)cur+40),*((uint32_t*)cur+44),*((uint32_t*)cur+48));
   }
 }
-/*
-   struct ibv_qp* mprud_create_qp(struct ibv_qp *ibqp, struct ibv_send_wr *wr)
-   {
-// only for UD QP
-if (ibqp->qp_type != IBV_QPT_UD){
-printf("QP type is not UD.\n");
-goto out;
-}
 
-// ibv_create_qp -> need
-// (1) pd  (2) attr
-struct ibv_qp* qp = NULL;
-
-struct ibv_qp_init_attr attr;
-memset(&attr, 0, sizeof(struct ibv_qp_init_attr));
-
-// Use the same CQs of ibqp
-attr.send_cq = ibqp->send_cq;
-attr.recv_cq = ibqp->recv_cq;
-attr.cap.max_send_wr  = user_param->tx_depth;
-attr.cap.max_send_sge = MAX_SEND_SGE;
-attr.cap.max_inline_data = user_param->inline_size;
-
-if (user_param->use_srq && (user_param->tst == LAT || user_param->mach     ine == SERVER || user_param->duplex == ON)) {
-attr.srq = ctx->srq;
-attr.cap.max_recv_wr  = 0;
-attr.cap.max_recv_sge = 0;
-} else {
-attr.srq = NULL;
-attr.cap.max_recv_wr  = user_param->rx_depth;
-attr.cap.max_recv_sge = MAX_RECV_SGE;
-}
-
-switch (user_param->connection_type) {
-
-case RC : attr.qp_type = IBV_QPT_RC; break;
-case UC : attr.qp_type = IBV_QPT_UC; break;
-case UD : attr.qp_type = IBV_QPT_UD; break;
-default:  fprintf(stderr, "Unknown connection type \n");
-return NULL;
-}
-
-
-qp = ibv_create_qp(ctx->pd, &attr);
-
-if (qp == NULL && errno == ENOMEM) {
-fprintf(stderr, "Requested QP size might be too big. Try reducing TX      depth and/or inline size.\n");
-fprintf(stderr, "Current TX depth is %d and  inline size is %d .\n",      user_param->tx_depth, user_param->inline_size);
-}
-
-if (user_param->inline_size > attr.cap.max_inline_data) {
-user_param->inline_size = attr.cap.max_inline_data;
-printf("  Actual inline-size(%d) > requested inline-size(%d)\n",
-attr.cap.max_inline_data, user_param->inline_size);
-}
-
-
-
-return qp;
-
-out:
-return NULL;
-}
-*/
 int mprud_destroy_ah_list()
 {
   int i;

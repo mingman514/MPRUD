@@ -17,7 +17,7 @@
   { fprintf(stderr," Cannot Allocate\n"); exit(1);}}
 
 #define USE_MPRUD
-#define MG_DEBUG_MODE
+//#define MG_DEBUG_MODE
 
 #define MPRUD_NUM_PATH 4
 #define MPRUD_DEFAULT_PORT 1
@@ -37,6 +37,8 @@
 
 #define SUCCESS (0)
 #define FAILURE (1)
+#define MP_SERVER (0)
+#define MP_CLIENT (1)
 
 #define MG_DEBUG 0
 #define MG_DEBUG_BUFFER 0

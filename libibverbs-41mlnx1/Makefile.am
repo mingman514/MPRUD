@@ -62,7 +62,7 @@ examples_ibv_polldcinfo_LDADD = $(top_builddir)/src/libibverbs.la
 libibverbsincludedir = $(includedir)/infiniband
 
 libibverbsinclude_HEADERS = include/infiniband/arch.h include/infiniband/driver.h \
-    include/infiniband/kern-abi.h include/infiniband/opcode.h include/infiniband/verbs.h include/infiniband/mprud.h include/infiniband/mprud_opt.h \
+    include/infiniband/kern-abi.h include/infiniband/opcode.h include/infiniband/verbs.h include/infiniband/mprud_opt.h include/infiniband/mprud.h \
     include/infiniband/sa-kern-abi.h include/infiniband/sa.h include/infiniband/marshall.h \
     include/infiniband/ofa_verbs.h include/infiniband/driver_exp.h include/infiniband/kern-abi_exp.h \
     include/infiniband/verbs_exp.h include/infiniband/peer_ops.h
