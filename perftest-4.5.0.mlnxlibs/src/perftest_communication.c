@@ -1755,10 +1755,13 @@ int check_mtu(struct ibv_context *context,struct perftest_parameters *user_param
 		else
 		{
       // MPRUD by mingman
+#ifdef USE_MPRUD
       //Remove msg size limit
       fprintf(stderr, " Max message size(%d) in UD is now greater than MTU(%d)\n", user_param->size, MTU_SIZE(user_param->curr_mtu));
-			//fprintf(stderr," Max message size in UD cannot be greater than MTU \n");
-			//return FAILURE;
+#else
+			fprintf(stderr," Max message size in UD cannot be greater than MTU \n");
+			return FAILURE;
+#endif
 		}
 	}
 	/*checking msg size in raw ethernet*/

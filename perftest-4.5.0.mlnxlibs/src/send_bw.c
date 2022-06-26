@@ -256,6 +256,7 @@ int main(int argc, char *argv[])
 	if (user_param.transport_type == IBV_TRANSPORT_IWARP)
 		ctx.send_rcredit = 1;
 
+printf("port_num: %d\n", user_param.ib_port);
 	/* Allocating arrays needed for the test. */
 	alloc_ctx(&ctx,&user_param);
 
@@ -291,8 +292,10 @@ int main(int argc, char *argv[])
 //        printf("%s -- %p\n", (char*)ctx.buf[0], ctx.buf[0]);
 //        strcpy((char*)ctx.buf[0], "test");
 //      }
+#ifdef MG_DEBUG_MODE
       printf("------------ BUFFER MSG -----------\n");
       printf("%s -- %p\n", (char*)ctx.buf[0], ctx.buf[0]);
+#endif
 
 	/* Set up the Connection. */
 	if (send_set_up_connection(&ctx,&user_param,my_dest,&mcg_params,&user_comm)) {
@@ -478,18 +481,20 @@ int main(int argc, char *argv[])
 				return FAILURE;
 			}
 		}
-
     // sender problem here
     // because customized [post_recv] in ctx_set_recv_wqes
     // does not let it pass through here due to polling...
+#ifdef USE_MPRUD
     if (user_param.machine == CLIENT){
-      printf("Client sleep to sync.\n");
-      sleep(1);
+      printf("[MPRUD] Client sleep to sync.\n");
+//      sleep(1);
     }
-//		if (ctx_hand_shake(&user_comm,&my_dest[0],&rem_dest[0])) {
-//			fprintf(stderr,"Failed to exchange data between server and clients\n");
-//			return FAILURE;
-//		}
+#else
+		if (ctx_hand_shake(&user_comm,&my_dest[0],&rem_dest[0])) {
+			fprintf(stderr,"Failed to exchange data between server and clients\n");
+			return FAILURE;
+		}
+#endif
 
 		if (user_param.duplex) {
 
@@ -572,57 +577,18 @@ int main(int argc, char *argv[])
 			printf(RESULT_LINE);
 	}
 
+#ifdef MG_DEBUG_MODE
   // MPRUD by mingman - check buffer
   if (user_param.machine == SERVER){
-    printf("------------ BUFFER MSG -----------\n");
-    char* tmp = ctx.buf[0]+ 4096 + 24 + 40;
+    printf("------------ SERVER BUFFER MSG -----------\n");
+    char* tmp = ctx.buf[0];
     printf("%s -- (%p)\n", tmp, tmp);
-    
-//    printf("######## GRH ########\n");
-//    tmp -= 40;
-//
-//    int c = 0;
-//    while (c<40)
-//    {
-//    /*  printf("[%d] ", c);
-//      char target = *(tmp + c);
-//      int n=0;
-//      while(n < 8){
-//        if (target & 1)
-//          printf("1");
-//        else
-//          printf("0");
-//        target = target >> 1;
-//        n++;
-//      }
-//      printf("(%p)\n", tmp+c);
-//      */
-//      printf("[%d] 0x%04d (%p)\n", c, *(tmp+c), tmp+c);
-//      c += 1;
-//    }
-///*
-//    tmp += 8; // start from SGID
-//    char* sgid = (char*) malloc(sizeof(char) * 16);
-//    char* dgid = (char*) malloc(sizeof(char) * 16);
-//    for (int i = 0; i < 16; i++){
-//      sgid[i] = *tmp++;
-//    }
-//    for (int i = 0; i < 16; i++){
-//      dgid[i] = *tmp++;
-//    }
-//    printf("SGID: ");
-//    for (int i=0; i<16; i++)
-//      printf("%02d ", sgid[i]);
-//
-//    printf("\n\nDGID: ");
-//    for (int i=0; i<16; i++)
-//      printf("%02d ", dgid[i]);
-//*/
 
   } else {
-    printf("------------ BUFFER MSG -----------\n");
+    printf("------------ CLIENT BUFFER MSG -----------\n");
     printf("%s -- (%p)\n", (char*)ctx.buf[0], (char*)ctx.buf[0]);
   }
+#endif
 
 	if (ctx_close_connection(&user_comm,&my_dest[0],&rem_dest[0])) {
 		fprintf(stderr," Failed to close connection between server and client\n");

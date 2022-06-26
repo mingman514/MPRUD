@@ -1431,22 +1431,18 @@ static inline int poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 		}
 	}
 
-/*  for (int i=0; i<wc_size; i++){
-    struct ibv_exp_wc tmp = wc[i];
-    printf("WC info: wr_id=%lu  status=%d  opcode=%d  qp_num=%u  byte_len=%u\n", tmp.wr_id, tmp.status, tmp.exp_opcode, tmp.qp_num, tmp.byte_len);
-
-  }
-*/
 	mlx5_lock(&cq->lock);
 	for (npolled = 0, twc = wc; npolled < ne; ++npolled, twc += wc_size) {
     // MPRUD passes here
 		err = mlx5_poll_one(cq, &rsc, &srq, twc, wc_size, cqe_ver);
 
     //MPRUD by mingman~
+#ifdef USE_MPRUD
     if (err == CQ_OK && ((struct ibv_exp_wc*)twc)->status != IBV_WC_SUCCESS){
       printf("err: %d status: %d wr_id: %ld\n", err, ((struct ibv_exp_wc*)twc)->status, ((struct ibv_exp_wc*)twc)->wr_id);
       continue;
     }
+#endif
     //~MPRUD by mingman
 
 		if (err != CQ_OK)
@@ -1481,22 +1477,30 @@ static inline int poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 }
 
 //MPRUD by mingman~
-//int mlx5_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_wc *wc)
+#ifdef USE_MPRUD
 int mlx5_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_wc *wc, uint32_t skip_mprud)
 {
   if(!skip_mprud)
-    return mprud_poll_cq(ibcq, ne, wc);
+    return mprud_poll_cq(ibcq, ne, wc, 0);  // no skip outer poll
+#else
+int mlx5_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_wc *wc)
+{
+#endif
 //~MPRUD by mingman
 
 	return poll_cq(ibcq, ne, (struct ibv_exp_wc *)wc, sizeof(*wc), 0);
 }
 
 //MPRUD by mingman~
-//int mlx5_poll_cq_1(struct ibv_cq *ibcq, int ne, struct ibv_wc *wc)
+#ifdef USE_MPRUD
 int mlx5_poll_cq_1(struct ibv_cq *ibcq, int ne, struct ibv_wc *wc, uint32_t skip_mprud)
 {
   if(!skip_mprud)
-    return mprud_poll_cq(ibcq, ne, wc);
+    return mprud_poll_cq(ibcq, ne, wc, 0);  // no skip outer poll
+#else
+int mlx5_poll_cq_1(struct ibv_cq *ibcq, int ne, struct ibv_wc *wc)
+{
+#endif
 //~MPRUD by mingman
 	return poll_cq(ibcq, ne, (struct ibv_exp_wc *)wc, sizeof(*wc), 1);
 }

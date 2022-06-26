@@ -218,7 +218,9 @@ struct ibv_pd *__ibv_alloc_pd(struct ibv_context *context)
 	pd = context->ops.alloc_pd(context);
 	if (pd)
 		pd->context = context;
-
+#ifdef USE_MPRUD
+  mprud_init_ctx();
+#endif
 	return pd;
 }
 default_symver(__ibv_alloc_pd, ibv_alloc_pd);
@@ -227,7 +229,7 @@ int __ibv_dealloc_pd(struct ibv_pd *pd)
 {
   // MPRUD by mingman 
 #ifdef USE_MPRUD
-  mprud_destroy_ah_list();
+  mprud_destroy_resources();
 #endif 
 	return pd->context->ops.dealloc_pd(pd);
 }
@@ -792,9 +794,10 @@ struct ibv_qp *__ibv_create_qp(struct ibv_pd *pd,
   mprud_set_recv_size(qp_init_attr->cap.max_recv_wr);
   mprud_set_cq_size(qp_init_attr->cap.max_recv_wr);
   */
-  mprud_set_send_size(init_attr.cap.max_send_wr);
-  mprud_set_recv_size(init_attr.cap.max_recv_wr);
+  /*mprud_set_send_size(512);
+  mprud_set_recv_size(512);
   mprud_set_cq_size(qp->recv_cq->cqe);
+  */
        }
 #endif
 

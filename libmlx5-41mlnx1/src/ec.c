@@ -1320,8 +1320,11 @@ static int ec_post_recv(struct ibv_qp *qp,
 		wr.num_sge = 1;
 	else
 		wr.num_sge = 0;
-
+#ifdef USE_MPRUD
+	return mlx5_post_recv(qp, &wr, &bad_wr, 1);
+#else
 	return mlx5_post_recv(qp, &wr, &bad_wr);
+#endif
 }
 
 static unsigned begin_wqe(struct mlx5_qp *qp, void **seg)

@@ -51,7 +51,7 @@
 #include "mlx5-abi.h"
 #include "wqe.h"
 #include "array_size.h"
-
+//MPRUD by mingman
 #include <infiniband/mprud.h>
 
 int mlx5_single_threaded = 0;
@@ -488,7 +488,6 @@ int mlx5_rereg_mr(struct ibv_mr *ibmr, int flags, struct ibv_pd *pd, void *addr,
 	struct ibv_rereg_mr cmd;
 	struct ibv_rereg_mr_resp resp;
 
-printf("mlx5 reg mr --- 3\n");
 	if (flags & IBV_REREG_MR_KEEP_VALID)
 		return ENOTSUP;
 
@@ -1958,7 +1957,6 @@ static struct ibv_qp *create_qp(struct ibv_context *context,
 				struct ibv_exp_qp_init_attr *attrx,
 				int is_exp)
 {
-  printf("create qp from mlx5 verbs.c\n");
 	struct mlx5_create_qp		cmd;
 	struct mlx5_create_qp_resp	resp;
 	struct mlx5_exp_create_qp	cmdx;

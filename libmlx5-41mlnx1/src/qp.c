@@ -62,20 +62,6 @@ enum {
 #define MLX5_IB_OPCODE_GET_OP(opcode)       ((opcode) & 0x0000FFFF)
 #define MLX5_IB_OPCODE_GET_ATTR(opcode)     ((opcode) & 0xFF000000)
 
-// MPRUD by mingman
-static int mprud_turn;
-static int msg_sqn;
-struct mprud_header{
-  uint32_t sid;
-  uint32_t msg_sqn;
-  uint32_t pkt_sqn;
-};
-uint32_t cur_idx=0;
-
-/*extern uint64_t post_scnt, post_rcnt;
-extern uint64_t polled_scnt, polled_rcnt;
-extern int split_num;*/
-
 static const uint32_t mlx5_ib_opcode[] = {
 	[IBV_EXP_WR_SEND]                       = MLX5_IB_OPCODE(MLX5_OPCODE_SEND,                MLX5_OPCODE_BASIC, 0),
 	[IBV_EXP_WR_SEND_WITH_IMM]              = MLX5_IB_OPCODE(MLX5_OPCODE_SEND_IMM,            MLX5_OPCODE_BASIC, MLX5_OPCODE_WITH_IMM),
@@ -536,7 +522,6 @@ static inline int set_data_ptr_seg(struct mlx5_wqe_data_seg *dseg, struct ibv_sg
 	dseg->lkey       = htonl(sg->lkey);
 	dseg->addr       = htonll(sg->addr + offset);
 
-//  printf("[DEBUG] byte count: %d   lkey: %d   addr: %ld\n", dseg->byte_count, dseg->lkey, dseg->addr);
 	return 0;
 }
 
@@ -2382,147 +2367,24 @@ int mlx5_exp_rollback_send(struct ibv_qp *ibqp,
   return 0;
 }
 // MPRUD by mingman~
+#ifdef USE_MPRUD
+int mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
+    struct ibv_send_wr **bad_wr, int skip_mprud)
+{
+/**
+ * Note:
+ * ibv_post_send() in perftest directly gets in here.
+ * Therefore, skip_mprud has uninitialized value.
+ */
+  //if(!skip_mprud)
+  if(skip_mprud != 1) // temp
+    return mprud_post_send(ibqp, wr, bad_wr);
+#else
 int mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
     struct ibv_send_wr **bad_wr)
 {
-  /* Insert my code */
-  char *env = getenv("ENABLE_MPRUD");
-  if (env && atoi(env) && ibqp->qp_type == IBV_QPT_UD){ // MPRUD enabled & is UD
-
-    struct ibv_ah **ah_list = mprud_get_ah_list();
-    if (!ah_list[mprud_turn]){
-      printf("[qp.c/mlx5_post_send] AH is NULL!!\n");
-      return FAILURE;
-    }
-
-    uint32_t size = wr->sg_list->length;
-    int i, err;
-    last_size = size % MPRUD_DEFAULT_MTU;
-    split_num = (last_size ? size/MPRUD_DEFAULT_MTU + 1 : size/MPRUD_DEFAULT_MTU);
-    int ne;
-    char* sbuf = mprud_get_inner_buffer();
-
-    if (MG_DEBUG_BUFFER)
-      printf("[DEBUG] sbuf: %p\tsg_list->addr: %lx\n", sbuf, wr->sg_list->addr);//, (uint64_t)sbuf - wr->sg_list->addr);
-
-    struct ibv_wc *wc = NULL;
-    ALLOCATE(wc, struct ibv_wc, MPRUD_POLL_BATCH);
-
-    if (MG_DEBUG){
-      printf("\n----------------------------------------\n");
-      printf("Split into %d post_sends. Last msg: %d bytes.\n", split_num, last_size);
-      printf("recv_size=%d | send_size=%d | cq_size=%d\n", recv_size, send_size, cq_size);
-    }
-
-    /**
-     * Work Request Setting
-     */
-    //wr->send_flags = 0;
-    wr->send_flags = IBV_SEND_SIGNALED;
-
-    // Edit sg_list values
-    struct ibv_send_wr *tmp_wr;
-    ALLOCATE(tmp_wr, struct ibv_send_wr, 1);
-    memcpy(tmp_wr, wr, sizeof(struct ibv_send_wr));
-
-    struct ibv_sge *tmp_sge;
-    ALLOCATE(tmp_sge, struct ibv_sge, 1);
-    memcpy(tmp_sge, wr->sg_list, sizeof(struct ibv_sge));
-
-    tmp_sge->addr = (uint64_t) sbuf;
-    if (MG_DEBUG_BUFFER)
-      printf("tmp_sge->addr: %lx  %s\n",tmp_sge->addr, (char*)tmp_sge->addr);
-
-    /**
-     * Message Splitting
-     */
-    char *cur;
-    int max_outstd = MIN(send_size, MPRUD_BUF_SPLIT_NUM);
-    
-    for (i = 0; i < split_num; i++, cur_idx++){
-      cur_idx = cur_idx % MPRUD_BUF_SPLIT_NUM;
-      cur = sbuf + cur_idx * MPRUD_SEND_BUF_OFFSET;  // MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU
-      /* initialize buffer */
-      memset(cur, 0, MPRUD_SEND_BUF_OFFSET);
-
-      // 1. write header
-      struct mprud_header mh = {
-        .sid = 128,
-        .msg_sqn = msg_sqn, // global variable
-        .pkt_sqn = i,
-      };
-      memcpy(cur, &mh, MPRUD_HEADER_SIZE);
-
-      // 2. copy data
-      memcpy(cur + MPRUD_HEADER_SIZE, (char*)wr->sg_list->addr + i*MPRUD_DEFAULT_MTU, (i == split_num-1 && last_size ? last_size : MPRUD_DEFAULT_MTU));
-      if (MG_DEBUG_BUFFER){
-        printf("[MPRUD] header in buffer: sid=%u msg_sqn=%u pkt_sqn=%u\n", *(uint32_t*)cur, *((uint32_t*)cur + 1), *((uint32_t*)cur + 2));
-        printf("[MPRUD] data in buffer: %s\n", cur+MPRUD_HEADER_SIZE);
-      }
-
-      // 3. replace wr 
-      tmp_sge->addr = (uint64_t) cur; 
-      tmp_sge->length = MPRUD_SEND_BUF_OFFSET;
-
-//      if (i == split_num - 1 && last_size)
-//        tmp_sge->length = MPRUD_HEADER_SIZE + last_size;
-
-      tmp_wr->sg_list = tmp_sge; 
-
-      // 4. set ah
-      //mprud_turn = 2;
-      tmp_wr->wr.ud.ah = ah_list[mprud_turn];
-      mprud_turn = (mprud_turn + 1) % MPRUD_NUM_PATH;
-
-      if (MG_DEBUG_AH)
-        printf("mprud_turn= %d\n", mprud_turn);
-
-      // set WR SIGNALED FLAG
-      //if (i == split_num-1)
-      //tmp_wr->send_flags = IBV_SEND_SIGNALED;
-
-      // 5. post_send
-      err = mlx5_post_send2(ibqp, tmp_wr, bad_wr);
-      posted_cnt++;
-      if (MG_DEBUG)
-        printf("posted! [%lu]\n", posted_cnt);
-      if (err){
-        printf("ERROR while splited post_send!\n");
-        return err;
-      }
-      // polling
-      while (posted_cnt - polled_cnt >= max_outstd) {
-        ne = mlx5_poll_cq_1(ibqp->send_cq, MPRUD_POLL_BATCH, wc, 1);
-        if (ne > 0){
-          polled_cnt += ne;
-          if (MG_DEBUG_POLL)
-            printf("  ---> [INNER POLL] %d\n\ttotal posted: %lu  total polled: %lu  send_size: %d\n", ne, posted_cnt, polled_cnt, send_size);
-          for (int i = 0; i < ne; i++) {
-            if (wc[i].status != IBV_WC_SUCCESS) {
-              fprintf(stderr, "[MPRUD] Poll send CQ error status=%u qp %d\n", wc[i].status,(int)wc[i].wr_id);
-            }
-          }
-        } else if (ne < 0){
-          fprintf(stderr, "[MPRUD] IPS poll CQ failed %d\n", ne);
-          free(wc);
-          return FAILURE;
-        }
-      }
-    }
-    msg_sqn++;
-
-    return SUCCESS; 
-  }
-  if (MG_DEBUG)
-     printf("********* MPRUD DISABLED! **********\n");
-  /* End of my code */
-
-  return mlx5_post_send2(ibqp, wr, bad_wr);
-}
-
-int mlx5_post_send2(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
-    struct ibv_send_wr **bad_wr)
-{
+#endif
+//~MPRUD by mingman
 #ifdef MW_DEBUG
   if (wr->opcode == IBV_WR_BIND_MW) {
     if (wr->bind_mw.mw->type == IBV_MW_TYPE_1)
@@ -2537,11 +2399,9 @@ int mlx5_post_send2(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
       return EINVAL;
   }
 #endif
-
   return __mlx5_post_send(ibqp, (struct ibv_exp_send_wr *)wr,
       (struct ibv_exp_send_wr **)bad_wr, 0);
 }
-//~MPRUD by mingman
 
 int mlx5_exp_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 		       struct ibv_exp_send_wr **bad_wr)
@@ -2607,131 +2467,25 @@ static void set_sig_seg(struct mlx5_qp *qp, struct mlx5_rwqe_sig *sig,
 	uint8_t  sign;
 	uint32_t qpn = qp->verbs_qp.qp.qp_num;
 
-	sign = calc_xor(sig + 1, size);
-	sign ^= calc_xor(&qpn, 4);
-	sign ^= calc_xor(&idx, 2);
-	sig->signature = ~sign;
+  sign = calc_xor(sig + 1, size);
+  sign ^= calc_xor(&qpn, 4);
+  sign ^= calc_xor(&idx, 2);
+  sig->signature = ~sign;
 }
 
+//MPRUD by mingman~
+#ifdef USE_MPRUD
 int mlx5_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
-		   struct ibv_recv_wr **bad_wr)
+    struct ibv_recv_wr **bad_wr, int skip_mprud)
 {
-  /* Insert my code */
-
-  char *env = getenv("ENABLE_MPRUD");
-  if (env && atoi(env) && ibqp->qp_type == IBV_QPT_UD){ // MPRUD enalbed & is UD
-    uint32_t size_with_grh = wr->sg_list->length;
-    uint32_t size = size_with_grh - MPRUD_GRH_SIZE;
-    int i, err;
-    last_size = size % MPRUD_DEFAULT_MTU;
-    split_num = (last_size ? size/MPRUD_DEFAULT_MTU + 1 : size/MPRUD_DEFAULT_MTU);
-    int ne;
-    char* rbuf = mprud_get_inner_buffer();
-
-    if (MG_DEBUG_BUFFER)
-      printf("[DEBUG] rbuf: %p\tsg_list->addr: %lx\n", rbuf, wr->sg_list->addr);//, (uint64_t)rbuf - wr->sg_list->addr);
-
-    struct ibv_wc *wc = NULL;
-    ALLOCATE(wc, struct ibv_wc, MPRUD_POLL_BATCH);
-
-    //printf("\n----------------------------------------\n");
-    if (MG_DEBUG){
-      printf("Split into %d post_recvs. Last msg: %d bytes.\n", split_num, last_size);
-    }
-
-    // Edit sg_list values
-    struct ibv_recv_wr *tmp_wr;
-    ALLOCATE(tmp_wr, struct ibv_recv_wr, 1);
-    memcpy(tmp_wr, wr, sizeof(struct ibv_recv_wr));
-
-    struct ibv_sge *tmp_sge;
-    ALLOCATE(tmp_sge, struct ibv_sge, 1);
-    memcpy(tmp_sge, wr->sg_list, sizeof(struct ibv_sge));
-
-    tmp_sge->addr = (uint64_t) rbuf;
-    if (MG_DEBUG_BUFFER)
-      printf("Data to changed buf ---> %lx\n", tmp_sge->addr);
- 
-    /**
-     * Message Splitting
-     */
-    char *cur;
-    int max_outstd = MIN(recv_size, MPRUD_BUF_SPLIT_NUM);
-
-    for (i = 0; i < split_num; i++, cur_idx++){
-      // 1. receive request
-      cur_idx = cur_idx % MPRUD_BUF_SPLIT_NUM;
-      cur = rbuf + cur_idx * MPRUD_RECV_BUF_OFFSET; // MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU
-      /* initialize buffer */
-      memset(cur, 0, MPRUD_RECV_BUF_OFFSET);
-
-      tmp_sge->addr = (uint64_t)cur;
-      tmp_sge->length = MPRUD_RECV_BUF_OFFSET; 
-
-//      if (i == split_num - 1 && last_size)
-//        tmp_sge->length = MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + last_size;
-
-      if (MG_DEBUG_BUFFER)
-        printf("[MPRUD] Msg #%d) addr: %lx\tlength: %u\n", i, tmp_sge->addr, tmp_sge->length); 
-      tmp_wr->sg_list = tmp_sge; 
-
-      // 2. post_recv
-      err = mlx5_post_recv2(ibqp, tmp_wr, bad_wr);
-      posted_cnt++;
-      if (MG_DEBUG)
-        printf(">> posted! [%lu]\n", posted_cnt);
-      if (err){
-        printf("ERROR while splited post_recv! #%d\n", err);
-        return err;
-      }
-      // polling
-      while (posted_cnt - polled_cnt >= max_outstd){   // recv_size: max_recv_wr
-        ne = mlx5_poll_cq_1(ibqp->recv_cq, MPRUD_POLL_BATCH, wc, 1);
-        if (ne > 0){
-          polled_cnt += ne;
-          if(MG_DEBUG_POLL)
-            printf("  ---> [INNER POLL] %d\n\ttotal posted: %lu  total polled: %lu  max_outstd: %d\n", ne, posted_cnt, polled_cnt, max_outstd);
-          for (int i = 0; i < ne; i++) {
-            if (wc[i].status != IBV_WC_SUCCESS) {
-              fprintf(stderr, "[MPRUD] Poll send CQ error status=%u qp %d\n",
-                  wc[i].status,(int)wc[i].wr_id);
-            }
-          }
-          // Check buffer
-          if (MG_DEBUG_BUFFER){
-             printf("\n---------- PRINT BUFFER [pre-inner polling] -----------\n");
-             mprud_print_inner_buffer();
-          }
-
-        } else if (ne < 0){
-          fprintf(stderr, "[MPRUD] IPR poll CQ failed: %d\n", ne);
-          free(wc);
-          return FAILURE;
-        }
-      }
-    }
-/*    if (0){
-      // TEMP 
-      struct ibv_qp_attr attr;
-        struct ibv_qp_init_attr init_attr;
-        ibv_query_qp(ibqp,&attr, 0, &init_attr);
-
-        printf("max send: %u |  max recv: %u | send_cqe: %u | recv_cqe: %u\n", init_attr.cap.max_send_wr, init_attr.cap.max_recv_wr, ibqp->send_cq->cqe, ibqp->recv_cq->cqe);
-      }
-*/
-    return SUCCESS;
-  }
-  if (MG_DEBUG)
-     printf("************** MPRUD DISABLED! **************\n");
-
-  /* End of my code */
-  return mlx5_post_recv2(ibqp, wr, bad_wr);
-}
-
-int mlx5_post_recv2(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
+  if (!skip_mprud)
+    return mprud_post_recv(ibqp, wr, bad_wr);
+#else
+int mlx5_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
     struct ibv_recv_wr **bad_wr)
 {
-  // MPRUD receiver side passes here
+#endif
+//~MPRUD by mingman
 	struct mlx5_qp *qp = to_mqp(ibqp);
 	struct mlx5_wqe_data_seg *scat;
 	int err = 0;
@@ -2819,6 +2573,7 @@ out:
 
 	return err;
 }
+
 int mlx5_use_huge(struct ibv_context *context, const char *key)
 {
 	char env[VERBS_MAX_ENV_VAL];

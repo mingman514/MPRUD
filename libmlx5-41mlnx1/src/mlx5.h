@@ -1163,10 +1163,13 @@ int mlx5_alloc_cq_peer_buf(struct mlx5_context *ctx, struct mlx5_cq *cq, int n);
 int mlx5_resize_cq(struct ibv_cq *cq, int cqe);
 int mlx5_destroy_cq(struct ibv_cq *cq);
 //MPRUD by mingman~
-//int mlx5_poll_cq(struct ibv_cq *cq, int ne, struct ibv_wc *wc) __MLX5_ALGN_F__;
+#ifdef USE_MPRUD
 int mlx5_poll_cq(struct ibv_cq *cq, int ne, struct ibv_wc *wc, uint32_t skip_mprud) __MLX5_ALGN_F__;
-//int mlx5_poll_cq_1(struct ibv_cq *cq, int ne, struct ibv_wc *wc) __MLX5_ALGN_F__;
 int mlx5_poll_cq_1(struct ibv_cq *cq, int ne, struct ibv_wc *wc, uint32_t skip_mprud) __MLX5_ALGN_F__;
+#else
+int mlx5_poll_cq(struct ibv_cq *cq, int ne, struct ibv_wc *wc) __MLX5_ALGN_F__;
+int mlx5_poll_cq_1(struct ibv_cq *cq, int ne, struct ibv_wc *wc) __MLX5_ALGN_F__;
+#endif
 //~MPRUD by mingman
 int mlx5_arm_cq(struct ibv_cq *cq, int solicited);
 void mlx5_cq_event(struct ibv_cq *cq);
@@ -1201,12 +1204,13 @@ int mlx5_destroy_qp(struct ibv_qp *qp);
 void mlx5_init_qp_indices(struct mlx5_qp *qp);
 void mlx5_init_rwq_indices(struct mlx5_rwq *rwq);
 void mlx5_update_post_send_one(struct mlx5_qp *qp, enum ibv_qp_state qp_state, enum ibv_qp_type	qp_type);
+#ifdef USE_MPRUD
+int mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
+			  struct ibv_send_wr **bad_wr, int skip_mprud) __MLX5_ALGN_F__;
+#else
 int mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			  struct ibv_send_wr **bad_wr) __MLX5_ALGN_F__;
-// MPRUD by mingman
-int mlx5_post_send2(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
-			  struct ibv_send_wr **bad_wr) __MLX5_ALGN_F__;
-
+#endif
 int mlx5_exp_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 		       struct ibv_exp_send_wr **bad_wr) __MLX5_ALGN_F__;
 struct ibv_exp_mkey_list_container *mlx5_alloc_mkey_mem(struct ibv_exp_mkey_list_container_attr *attr);
@@ -1221,11 +1225,13 @@ int mlx5_exp_destroy_wq(struct ibv_exp_wq *wq);
 struct ibv_exp_rwq_ind_table *mlx5_exp_create_rwq_ind_table(struct ibv_context *context,
 							    struct ibv_exp_rwq_ind_table_init_attr *init_attr);
 int mlx5_exp_destroy_rwq_ind_table(struct ibv_exp_rwq_ind_table *rwq_ind_table);
-// MPRUD by mingman
+#ifdef USE_MPRUD
+int mlx5_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
+			  struct ibv_recv_wr **bad_wr, int skip_mprud) __MLX5_ALGN_F__;
+#else
 int mlx5_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 			  struct ibv_recv_wr **bad_wr) __MLX5_ALGN_F__;
-int mlx5_post_recv2(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
-			  struct ibv_recv_wr **bad_wr) __MLX5_ALGN_F__;
+#endif
 void mlx5_calc_sq_wqe_size(struct ibv_qp_cap *cap, enum ibv_qp_type type,
 			   struct mlx5_qp *qp);
 void mlx5_set_sq_sizes(struct mlx5_qp *qp, struct ibv_qp_cap *cap,

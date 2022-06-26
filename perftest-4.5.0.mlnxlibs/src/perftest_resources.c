@@ -335,10 +335,7 @@ static inline int _new_post_send(struct pingpong_context *ctx,
 		fprintf(stderr, "Post send failed: unknown operation code.\n");;
 	}
 
-  //MPRUD by mingman
-  printf("[_new_post_send] QP type check\n");
 	if (qpt == IBV_QPT_UD) {
-    printf("[_new_post_send] QP type is UD\n");
 		ibv_wr_set_ud_addr(
 			ctx->qpx[index],
 			ctx->wr[wr_index].wr.ud.ah,
@@ -1587,15 +1584,17 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 			memset(ctx->buf[qp_index], 0, ctx->buff_size);
 		} else {
       // MPRUD both sender & receiver passes here
-			/*for (i = 0; i < ctx->buff_size; i++) {
+#ifndef USE_MPRUD
+			for (i = 0; i < ctx->buff_size; i++) {
 				((char*)ctx->buf[qp_index])[i] = (char)rand();
-			}*/
-
+			}
+#else
       //MPRUD by mingman~
       if(user_param->machine == SERVER)
         strcpy(ctx->buf[qp_index], "SERVER INITIAL STATE");
       else
         strcpy(ctx->buf[qp_index], "CLIENT INITIAL STATE");
+#endif
       //~MPRUD by mingman
 		}
 	}
@@ -2625,7 +2624,6 @@ static int ctx_modify_qp_to_rtr(struct ibv_qp *qp,
 			}
 		}
 	}
-  // when connection = RawEth
 	else if (user_param->raw_qos) {
 		attr->ah_attr.sl = user_param->sl;
 		flags |= IBV_QP_AV;
@@ -3228,7 +3226,6 @@ void ctx_set_send_reg_wqes(struct pingpong_context *ctx,
 		memset(&ctx->wr[i*user_param->post_list],0,sizeof(struct ibv_send_wr));
     // MPRUD: setting sge_list addr here
 		ctx->sge_list[i*user_param->post_list].addr = (uintptr_t)ctx->buf[i];
-    //printf("[DEBUG] ctx->sge_list[i*user_param->post_list].addr: %lx\n", (uintptr_t)ctx->buf[i]);
 		if (user_param->mac_fwd) {
 			if (user_param->mr_per_qp) {
 				ctx->sge_list[i*user_param->post_list].addr =
@@ -3268,8 +3265,9 @@ void ctx_set_send_reg_wqes(struct pingpong_context *ctx,
 					increase_loc_addr(&ctx->sge_list[i*user_param->post_list +j],user_param->size,
 							j-1,ctx->my_addr[i],0,ctx->cache_line_size,ctx->cycle_buffer);
 			}
-
+#ifdef MG_DEBUG_MODE
 printf("[DEBUG] Final SR sge_list addr: %lx\n", ctx->sge_list[i*user_param->post_list +j].addr);
+#endif
 			ctx->wr[i*user_param->post_list + j].sg_list = &ctx->sge_list[i*user_param->post_list + j];
 			ctx->wr[i*user_param->post_list + j].num_sge = MAX_SEND_SGE;
 			ctx->wr[i*user_param->post_list + j].wr_id   = i;
@@ -3369,7 +3367,9 @@ int ctx_set_recv_wqes(struct pingpong_context *ctx,struct perftest_parameters *u
 	int			num_of_qps = user_param->num_of_qps;
 	struct ibv_recv_wr	*bad_wr_recv;
 	int			size_per_qp = user_param->rx_depth;
+#ifdef MG_DEBUG_MODE
 printf("Pre-posting of RR: %d\n", size_per_qp);
+#endif
 	if((user_param->use_xrc || user_param->connection_type == DC) &&
 				(user_param->duplex || user_param->tst == LAT)) {
 
@@ -3393,7 +3393,9 @@ printf("Pre-posting of RR: %d\n", size_per_qp);
 
 		if (user_param->connection_type == UD){
 			ctx->recv_sge_list[i].addr += (ctx->cache_line_size - UD_ADDITION);
+#ifdef MG_DEBUG_MODE
       printf("[DEBUG] ctx->recv_sge_list[i].addr: %lx, ctx->cache_line_size: %d,  UD_ADDITION: %d   \n", ctx->recv_sge_list[i].addr, ctx->cache_line_size, UD_ADDITION);
+#endif
     }
 
     // MPRUD add 40 bytes for GRH header if UD
@@ -3407,7 +3409,6 @@ printf("Pre-posting of RR: %d\n", size_per_qp);
 		ctx->rwr[i].num_sge	= MAX_RECV_SGE;
 
 		ctx->rx_buffer_addr[i] = ctx->recv_sge_list[i].addr;
-//printf("[DEBUG] ctx->rx_buffer_addr[i]: %lx\n", ctx->recv_sge_list[i].addr);
 		for (j = 0; j < size_per_qp ; ++j) {
 
 			if (user_param->use_srq) {
@@ -3435,11 +3436,15 @@ printf("Pre-posting of RR: %d\n", size_per_qp);
 						user_param->connection_type,ctx->cache_line_size,ctx->cycle_buffer);
 			}
 		}
+#ifdef MG_DEBUG_MODE
     printf("Final recv_sge_list.addr = %lx\n  --> ", ctx->recv_sge_list[i].addr);
+#endif
 		ctx->recv_sge_list[i].addr = ctx->rx_buffer_addr[i];    
     printf("%lx\n", ctx->recv_sge_list[i].addr);
 	}
+#ifdef MG_DEBUG_MODE
 printf("[DEBUG] Pre-posting (set_recv_wqe) DONE: %d!\n", size_per_qp);
+#endif
 	return 0;
 }
 
@@ -3665,8 +3670,8 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 	uintptr_t		primary_send_addr = ctx->sge_list[0].addr;
 	int			address_offset = 0;
 	int			flows_burst_iter = 0;
-
-	ALLOCATE(wc ,struct ibv_wc ,CTX_POLL_BATCH);
+	
+  ALLOCATE(wc ,struct ibv_wc ,CTX_POLL_BATCH);
 
 	if (user_param->test_type == DURATION) {
 		duration_param=user_param;
@@ -3801,8 +3806,18 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
              * meaning that just setting proper AH
              * might be enough to use multi-path.
              * */
-            //printf("[DEBUG] post_send here\n");
             //usleep(10);
+            /*
+            if (1){
+              struct ibv_qp_attr attr;
+              struct ibv_qp_init_attr init_attr;
+              ibv_query_qp(ctx->qp[index],&attr, 0, &init_attr);
+
+              printf("Outer QP --> qkey: %u qp_num: %u  dlid: %d  dest_qp_num: %u\n", attr.qkey, ctx->qp[index]->qp_num, attr.ah_attr.dlid, attr.dest_qp_num);
+            }*/
+
+            
+            
 						err = (ctx->post_send_func_pointer)(ctx->qp[index],
 							&ctx->wr[index*user_param->post_list],&bad_wr);
 					}
@@ -3947,8 +3962,9 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
               user_param->iters += user_param->cq_mod;
             }
           }
-
+#ifdef MG_DEBUG_MODE
           printf("[Outer poll] ne: %d   cq_mod: %d  totccnt: %ld\n", ne, user_param->cq_mod, totccnt);
+#endif
         } else if (ne < 0) {
           fprintf(stderr, "poll CQ failed %d\n",ne);
           return_value = FAILURE;
@@ -4035,7 +4051,6 @@ int run_iter_bw_server(struct pingpong_context *ctx, struct perftest_parameters 
 
   
 	while (rcnt < tot_iters || (user_param->test_type == DURATION && user_param->state != END_STATE)) {
-
 		if (user_param->use_event) {
 			if (ctx_notify_events(ctx->channel)) {
 				fprintf(stderr ," Failed to notify events to CQ");
@@ -4060,7 +4075,6 @@ int run_iter_bw_server(struct pingpong_context *ctx, struct perftest_parameters 
 			#ifdef HAVE_ACCL_VERBS
 			}
 			#endif
-
 			if (ne > 0) {
         //printf("[Outer poll] ne: %d   cq_mod: %d\n", ne, user_param->cq_mod);
 				if (firstRx) {
@@ -4083,6 +4097,9 @@ int run_iter_bw_server(struct pingpong_context *ctx, struct perftest_parameters 
 					rcnt_for_qp[wc_id]++;
 					rcnt++;
 					check_alive_data.current_totrcnt = rcnt;
+#ifdef MG_DEBUG_MODE
+          printf("[Outer poll] ne: %d  rcnt: %ld  tot_iters: %d\n\n", ne, rcnt, tot_iters);
+#endif
 
 					if (user_param->test_type==DURATION && user_param->state == SAMPLE_STATE) {
 						if (user_param->report_per_port) {
@@ -4178,7 +4195,6 @@ int run_iter_bw_server(struct pingpong_context *ctx, struct perftest_parameters 
 				}
 			}
 		} while (ne > 0);
-
 		if (ne < 0) {
 			fprintf(stderr, "Poll Receive CQ failed %d\n", ne);
 			return_value = FAILURE;

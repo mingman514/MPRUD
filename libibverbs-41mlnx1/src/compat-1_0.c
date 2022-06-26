@@ -348,8 +348,13 @@ static int post_srq_recv_wrapper_1_0(struct ibv_srq_1_0 *srq, struct ibv_recv_wr
 	return ret;
 }
 
+#ifdef USE_MPRUD
+static int post_send_wrapper_1_0(struct ibv_qp_1_0 *qp, struct ibv_send_wr_1_0 *wr,
+				 struct ibv_send_wr_1_0 **bad_wr, int skip_mprud)
+#else
 static int post_send_wrapper_1_0(struct ibv_qp_1_0 *qp, struct ibv_send_wr_1_0 *wr,
 				 struct ibv_send_wr_1_0 **bad_wr)
+#endif
 {
 	struct ibv_send_wr_1_0 *w;
 	struct ibv_send_wr *real_wr, *head_wr = NULL, *tail_wr = NULL, *real_bad_wr;
@@ -374,9 +379,13 @@ static int post_send_wrapper_1_0(struct ibv_qp_1_0 *qp, struct ibv_send_wr_1_0 *
 
 		tail_wr = real_wr;
 	}
-
+#ifdef USE_MPRUD
+	ret = qp->context->real_context->ops.post_send(qp->real_qp, head_wr,
+						       &real_bad_wr, skip_mprud);
+#else
 	ret = qp->context->real_context->ops.post_send(qp->real_qp, head_wr,
 						       &real_bad_wr);
+#endif
 
 	if (ret) {
 		for (real_wr = head_wr, w = wr;
@@ -391,8 +400,13 @@ static int post_send_wrapper_1_0(struct ibv_qp_1_0 *qp, struct ibv_send_wr_1_0 *
 	return ret;
 }
 
+#ifdef USE_MPRUD
+static int post_recv_wrapper_1_0(struct ibv_qp_1_0 *qp, struct ibv_recv_wr_1_0 *wr,
+				 struct ibv_recv_wr_1_0 **bad_wr, int skip_mprud)
+#else
 static int post_recv_wrapper_1_0(struct ibv_qp_1_0 *qp, struct ibv_recv_wr_1_0 *wr,
 				 struct ibv_recv_wr_1_0 **bad_wr)
+#endif
 {
 	struct ibv_recv_wr_1_0 *w;
 	struct ibv_recv_wr *real_wr, *head_wr = NULL, *tail_wr = NULL, *real_bad_wr;
@@ -412,8 +426,13 @@ static int post_recv_wrapper_1_0(struct ibv_qp_1_0 *qp, struct ibv_recv_wr_1_0 *
 		tail_wr = real_wr;
 	}
 
+#ifdef USE_MPRUD
+	ret = qp->context->real_context->ops.post_recv(qp->real_qp, head_wr,
+						       &real_bad_wr, skip_mprud);
+#else
 	ret = qp->context->real_context->ops.post_recv(qp->real_qp, head_wr,
 						       &real_bad_wr);
+#endif
 
 	if (ret) {
 		for (real_wr = head_wr, w = wr;

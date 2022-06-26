@@ -1075,10 +1075,17 @@ struct ibv_context_ops {
 	int			(*modify_qp)(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 					     int attr_mask);
 	int			(*destroy_qp)(struct ibv_qp *qp);
+#ifdef USE_MPRUD
+	int			(*post_send)(struct ibv_qp *qp, struct ibv_send_wr *wr,
+					     struct ibv_send_wr **bad_wr, int skip_mprud);
+	int			(*post_recv)(struct ibv_qp *qp, struct ibv_recv_wr *wr,
+					     struct ibv_recv_wr **bad_wr, int skip_mprud);
+#else
 	int			(*post_send)(struct ibv_qp *qp, struct ibv_send_wr *wr,
 					     struct ibv_send_wr **bad_wr);
 	int			(*post_recv)(struct ibv_qp *qp, struct ibv_recv_wr *wr,
 					     struct ibv_recv_wr **bad_wr);
+#endif
 	struct ibv_ah *		(*create_ah)(struct ibv_pd *pd, struct ibv_ah_attr *attr);
 	int			(*destroy_ah)(struct ibv_ah *ah);
 	int			(*attach_mcast)(struct ibv_qp *qp, const union ibv_gid *gid,
@@ -1684,7 +1691,13 @@ int ibv_destroy_qp(struct ibv_qp *qp);
 static inline int ibv_post_send(struct ibv_qp *qp, struct ibv_send_wr *wr,
 				struct ibv_send_wr **bad_wr)
 {
+//MPRUD by mingman
+#ifdef USE_MPRUD
+  printf("ibv_post_send\n");
+	return qp->context->ops.post_send(qp, wr, bad_wr, 0);
+#else
 	return qp->context->ops.post_send(qp, wr, bad_wr);
+#endif
 }
 
 /**
@@ -1693,7 +1706,12 @@ static inline int ibv_post_send(struct ibv_qp *qp, struct ibv_send_wr *wr,
 static inline int ibv_post_recv(struct ibv_qp *qp, struct ibv_recv_wr *wr,
 				struct ibv_recv_wr **bad_wr)
 {
+  //MPRUD by mingman
+#ifdef USE_MPRUD
+	return qp->context->ops.post_recv(qp, wr, bad_wr, 0);
+#else
 	return qp->context->ops.post_recv(qp, wr, bad_wr);
+#endif
 }
 
 /**
