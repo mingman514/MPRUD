@@ -382,6 +382,11 @@ struct ibv_mr *__ibv_exp_reg_mr(struct ibv_exp_reg_mr_in *in)
    *  Since Perftest app sets 'IBV_EXP_ACCESS_ALLOCATE_MR' Flag.
    */
 #ifdef USE_MPRUD
+  if (mprud_init_ctx()){
+    printf("MPRUD init_ctx failed.\n");
+    return NULL;
+  }
+
   // set outer buffer addr
   in->addr = malloc(in->length);  // type casting is needed?
   mprud_set_outer_buffer(in->addr);
@@ -390,7 +395,9 @@ struct ibv_mr *__ibv_exp_reg_mr(struct ibv_exp_reg_mr_in *in)
   struct ibv_exp_reg_mr_in new_in;
   new_in = *(in);
   new_in.addr = NULL;
-  new_in.length = (MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU) * MPRUD_BUF_SPLIT_NUM; 
+  new_in.length = ( (MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU) // Data
+                    + (MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE) )  // ACK
+                    * MPRUD_BUF_SPLIT_NUM; 
 #ifdef MG_DEBUG_MODE
     printf("[DEBUG] ibv_reg_mr: (Outer buffer)in.length=%d --> (Inner buffer)mprudlen=%d\n", in->length, new_in.length);
 #endif
@@ -402,15 +409,15 @@ struct ibv_mr *__ibv_exp_reg_mr(struct ibv_exp_reg_mr_in *in)
 
   // set inner buffer addr  
   mprud_set_inner_buffer(new_in.addr);
-
+#ifdef MG_DEBUG_BUFFER
+    printf("outer: %p   inner: %p\n", mprud_get_outer_buffer(), mprud_get_inner_buffer() );
+#endif
   /**
    * Must assign the original buffer address when returning MR.
    * App will use the buffer address in this MR.
    * (Can access inner & outer buffer since stored those addresses already)
    */
   inner_mr->addr = in->addr;
-  if (MG_DEBUG_BUFFER)
-    printf("outer: %p   inner: %p\n", mprud_get_outer_buffer(), mprud_get_inner_buffer() );
 
   return inner_mr;
 #endif
@@ -765,10 +772,6 @@ struct ibv_qp *__ibv_create_qp(struct ibv_pd *pd,
 	}
   //MPRUD by mingman~
 #ifdef USE_MPRUD
-  if (mprud_init_ctx()){
-    printf("MPRUD init_ctx failed.\n");
-    return NULL;
-  }
   if (mprud_create_ah_list(pd, qp_init_attr)){
     printf("MPRUD create_ah_list failed.\n");
     return NULL;

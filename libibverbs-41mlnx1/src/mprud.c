@@ -12,13 +12,17 @@ struct mprud_context mpctx;
 // Cleaning target later
 int last_size = 0;
 int split_num = 1;   // number of splitted requests
-char *inner_buf = NULL;
-char *outer_buf = NULL;
+/*char *inner_buf = NULL;
+char *outer_buf = NULL;*/
 struct ibv_ah* ah_list[MPRUD_NUM_PATH];
 
+struct buf_idx {
+  uint32_t in;
+  uint32_t out;
+};
 
-static uint32_t ibuf_idx = 0; // inner buffer idx
-static uint32_t obuf_idx = 0; // outer buffer idx 
+static struct buf_idx send_idx = {0,};
+static struct buf_idx recv_idx = {0,};
 
 static char REMOTE_GIDS[4][50] = {
   "0000:0000:0000:0000:0000:ffff:0a00:6503", // 10.0.101.3 spine-1
@@ -42,6 +46,7 @@ int mprud_init_ctx()
   mpctx.send_size = 128;
   mpctx.recv_size = 512;
 
+  mpctx.sid = 75;
   // ....  
   return SUCCESS;
 }
@@ -225,7 +230,7 @@ int mprud_create_ah_list(struct ibv_pd *pd,
 }
 char *mprud_get_inner_buffer()
 {
-  return inner_buf;
+  return mpctx.inner_buf;
 } 
 
 void mprud_set_inner_buffer(void* ptr)
@@ -233,12 +238,13 @@ void mprud_set_inner_buffer(void* ptr)
 #ifdef MG_DEBUG_MODE
   printf("Set Inner Buffer to [%p]\n", ptr);
 #endif
-  inner_buf = ptr;
+  //inner_buf = ptr;
+  mpctx.inner_buf = ptr;
 }
 
 char *mprud_get_outer_buffer()
 {
-  return outer_buf;
+  return mpctx.outer_buf;
 }
 
 void mprud_set_outer_buffer(void* ptr)
@@ -247,7 +253,8 @@ void mprud_set_outer_buffer(void* ptr)
   printf("Set Outer Buffer to [%p]\n", ptr);
 #endif
 
-  outer_buf = ptr;
+  //outer_buf = ptr;
+  mpctx.outer_buf = ptr;
 }
 
 inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct ibv_send_wr **bad_wr)
@@ -306,16 +313,16 @@ inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct i
   char *cur;
 //  int max_outstd = MIN(mpctx.send_size * MPRUD_NUM_PATH, MPRUD_BUF_SPLIT_NUM);  // MIN(inner queue capacity, buffer capacity)
   int max_outstd = 128;
-  for (i = 0; i < split_num; i++, ibuf_idx++){
-    ibuf_idx = ibuf_idx % MPRUD_BUF_SPLIT_NUM;
-    cur = sbuf + ibuf_idx * MPRUD_SEND_BUF_OFFSET;  // MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU
+  for (i = 0; i < split_num; i++, send_idx.in++){
+    send_idx.in = send_idx.in % MPRUD_BUF_SPLIT_NUM;
+    cur = sbuf + send_idx.in * MPRUD_SEND_BUF_OFFSET;  // MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU
     /* initialize buffer */
     memset(cur, 0, MPRUD_SEND_BUF_OFFSET);
 
     // 1. write header
     struct mprud_header mh = {
-      .sid = 128,
-      .msg_sqn = mpctx.msg_sqn, // global variable
+      .sid = mpctx.sid,
+      .msg_sqn = mpctx.msg_sqn,
       .pkt_sqn = i,
     };
     memcpy(cur, &mh, MPRUD_HEADER_SIZE);
@@ -349,6 +356,13 @@ inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct i
     /* QP selection */
 
     // 5. post_send
+#ifdef SIMULATE_PATH_DISABLED
+    if (mpctx.post_turn == SIMULATE_PATH_DISABLED){
+      printf("Path #%d disabled.\n", SIMULATE_PATH_DISABLED);
+      mpctx.post_turn = (mpctx.post_turn + 1) % MPRUD_NUM_PATH;
+      continue;
+    }
+#endif
     err = ibqp->context->ops.post_send(mpctx.inner_qps[mpctx.post_turn], tmp_wr, bad_wr, 1); // original post send
     mpctx.post_turn = (mpctx.post_turn + 1) % MPRUD_NUM_PATH;
     *posted_cnt += 1;
@@ -364,21 +378,6 @@ inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct i
     while (*posted_cnt - *polled_cnt >= max_outstd) {
       if (mprud_poll_cq(mpctx.inner_qps[0]->send_cq, MPRUD_POLL_BATCH, wc, 1)) // inner poll & update count included
         return FAILURE; //skip outer poll
-     /* if (ne > 0){
-        *polled_cnt += ne;
-#ifdef MG_DEBUG_MODE
-        printf("  ---> [INNER POLL] %d\n\ttotal posted: %lu  total polled: %lu  send_size: %d\n", ne, *posted_cnt, *polled_cnt, mpctx.send_size);
-#endif
-        for (int i = 0; i < ne; i++) {
-          if (wc[i].status != IBV_WC_SUCCESS) {
-            fprintf(stderr, "[MPRUD] Poll send CQ error status=%u qp %d\n", wc[i].status,(int)wc[i].wr_id);
-          }
-        }
-      } else if (ne < 0){
-        fprintf(stderr, "[MPRUD] IPS poll CQ failed %d\n", ne);
-        free(wc);
-        return FAILURE;
-      }*/
     }
   }
   mpctx.msg_sqn++;
@@ -419,11 +418,6 @@ inline int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct i
   ALLOCATE(tmp_sge, struct ibv_sge, 1);
   memcpy(tmp_sge, wr->sg_list, sizeof(struct ibv_sge));
 
-  tmp_sge->addr = (uint64_t) rbuf;
-#ifdef MG_DEBUG_MODE
-  printf("Data to changed buf ---> %lx\n", tmp_sge->addr);
-#endif
-
   /**
    * Message Splitting
    */
@@ -431,10 +425,11 @@ inline int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct i
 //  int max_outstd = MIN(mpctx.recv_size * MPRUD_NUM_PATH, MPRUD_BUF_SPLIT_NUM);  // MIN(inner queue capacity, buffer capacity)
   int max_outstd = 512;
 
-  for (i = 0; i < split_num; i++, ibuf_idx++){
+  for (i = 0; i < split_num; i++, recv_idx.in++){
+
     // 1. receive request
-    ibuf_idx = ibuf_idx % MPRUD_BUF_SPLIT_NUM;
-    cur = rbuf + ibuf_idx * MPRUD_RECV_BUF_OFFSET; // MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU
+    recv_idx.in = recv_idx.in % MPRUD_BUF_SPLIT_NUM;
+    cur = rbuf + recv_idx.in * MPRUD_RECV_BUF_OFFSET; // MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU
     /* initialize buffer */
     memset(cur, 0, MPRUD_RECV_BUF_OFFSET);
 
@@ -446,8 +441,16 @@ inline int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct i
 #endif
     tmp_wr->sg_list = tmp_sge;
 
-    // 2. post_recv
-    //err = mlx5_post_recv2(ibqp, tmp_wr, bad_wr);
+    // 2. write pkt header in buffer
+    cur = (rbuf + MPRUD_BUF_SPLIT_NUM * MPRUD_RECV_BUF_OFFSET) + recv_idx.in * MPRUD_HEADER_SIZE;
+    struct mprud_header mh = {
+      .sid = mpctx.sid,
+      .msg_sqn = mpctx.msg_sqn,
+      .pkt_sqn = i,
+    };
+    memcpy(cur, &mh, MPRUD_HEADER_SIZE);
+
+    // 3. post_recv
     err = ibqp->context->ops.post_recv(mpctx.inner_qps[mpctx.post_turn], tmp_wr, bad_wr, 1);  // original post recv
 
     mpctx.post_turn = (mpctx.post_turn + 1) % MPRUD_NUM_PATH;
@@ -463,54 +466,74 @@ inline int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct i
     while (*posted_cnt - *polled_cnt >= max_outstd){
       if (mprud_poll_cq(mpctx.inner_qps[0]->recv_cq, MPRUD_POLL_BATCH, wc, 1))  // inner poll & update count included
         return FAILURE; // last arg 1 => skip outer poll
-
-      //ne = mlx5_poll_cq_1(ibqp->recv_cq, MPRUD_POLL_BATCH, wc, 1);
-     /* if (ne > 0){
-        mpctx.polled_scnt.pkt += ne;
-#ifdef MG_DEBUG_MODE
-        printf("  ---> [INNER POLL] %d\n\ttotal posted: %lu  total polled: %lu\n", ne, *posted_cnt, *polled_cnt);
-#endif
-        for (int i = 0; i < ne; i++) {
-          if (wc[i].status != IBV_WC_SUCCESS) {
-            fprintf(stderr, "[MPRUD] Poll send CQ error status=%u qp %d\n",
-                wc[i].status,(int)wc[i].wr_id);
-          }
-        }
-        // Check buffer
-#ifdef MG_DEBUG_MODE
-        printf("\n---------- PRINT BUFFER [pre-inner polling] -----------\n");
-        mprud_print_inner_buffer();
-#endif
-
-      } else if (ne < 0){
-        fprintf(stderr, "[MPRUD] IPR poll CQ failed: %d\n", ne);
-        free(wc);
-        return FAILURE;
-      }*/
     }
   }
   return SUCCESS;
 
 }
 
-static inline void mprud_syn_buffer(int outer_poll_num)
+/* To be unused */
+static inline void mprud_syn_outer_buffer(int outer_poll_num)
 {
-  char* inner_buf = mprud_get_inner_buffer();
-  char* outer_buf = mprud_get_outer_buffer();
   char* cur;
 
   for (int i = 0; i < outer_poll_num; i++){
-    for (int j = 0; j < split_num; j++, obuf_idx++){
-      obuf_idx = obuf_idx % MPRUD_BUF_SPLIT_NUM;
-      cur = inner_buf + obuf_idx * MPRUD_RECV_BUF_OFFSET;
+    for (int j = 0; j < split_num; j++, recv_idx.out++){
+      recv_idx.out = recv_idx.out % MPRUD_BUF_SPLIT_NUM;
+      cur = mpctx.inner_buf + recv_idx.out * MPRUD_RECV_BUF_OFFSET;
 
-      memcpy(outer_buf + (j * MPRUD_DEFAULT_MTU), cur + MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE,(j == split_num - 1 ? last_size: MPRUD_DEFAULT_MTU));
+      memcpy(mpctx.outer_buf + (j * MPRUD_DEFAULT_MTU), cur + MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE,(j == split_num - 1 ? last_size: MPRUD_DEFAULT_MTU));
 #ifdef MG_DEBUG_MODE
-      printf("obuf_idx: %d  inner_cur: %p   outer_cur: %p\n", obuf_idx, cur, outer_buf + (j * MPRUD_DEFAULT_MTU));
+      printf("recv_idx.out: %d  inner_cur: %p   outer_cur: %p\n", recv_idx.out, cur, mpctx.outer_buf + (j * MPRUD_DEFAULT_MTU));
 #endif
     }
   }
+}
 
+//static inline void mprud_syn_outer_buffer(int inner_poll_num)
+static inline mprud_recv_manage(uint32_t inner_poll_num)
+{
+  /**
+   * In case of MPRUD_BUF_SPLIT_NUM < split_num,
+   * recv_idx.out should be remained with accordance to split_num,
+   * not MPRUD_BUF_SPLIT_NUM 
+   */
+  uint32_t *cur;
+  uint32_t idx;
+
+  for (int i = 0; i < inner_poll_num; i++){
+    idx = recv_idx.out % MPRUD_BUF_SPLIT_NUM;  // target index of inner buffer
+
+    // Expected data
+    cur = (mpctx.inner_buf + MPRUD_RECV_BUF_OFFSET * MPRUD_BUF_SPLIT_NUM) + (i * MPRUD_HEADER_SIZE);
+    struct mprud_header my_mh = {
+      .sid =*cur,
+      .msg_sqn = *(cur + 1),
+      .pkt_sqn = *(cur + 2),
+    };
+
+    // Received data
+    cur = (mpctx.inner_buf + idx * MPRUD_RECV_BUF_OFFSET) + MPRUD_GRH_SIZE;
+    struct mprud_header recv_mh = {
+      .sid =*cur,
+      .msg_sqn = *(cur + 1),
+      .pkt_sqn = *(cur + 2),
+    };
+
+    // Comparison
+    if (recv_mh.sid == my_mh.sid && recv_mh.msg_sqn == my_mh.msg_sqn && recv_mh.pkt_sqn == my_mh.pkt_sqn){
+
+      // copy data to outer buffer
+      memcpy(mpctx.outer_buf + (recv_idx.out * MPRUD_DEFAULT_MTU), cur + MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE, (recv_idx.out == split_num - 1 ? last_size : MPRUD_DEFAULT_MTU));
+
+      // send ack
+      /* 2022-06-27 05:00 Start Coding Here! */
+
+    }
+    recv_idx.out++;
+    if (recv_idx.out == split_num)
+      recv_idx.out = 0;
+  }
 }
 
 // Splitted msg polling
@@ -536,8 +559,8 @@ static inline int mprud_outer_poll(int ne, struct ibv_wc *wc, uint64_t *posted_c
     *polled_cnt -= split_num * outer_poll_num;
 
     // Copy data to outer buffer
-    if (Iam == MP_SERVER)
-      mprud_syn_buffer(outer_poll_num);
+//    if (Iam == MP_SERVER)
+//      mprud_syn_buffer(outer_poll_num);
 
     return outer_poll_num;
   }
@@ -560,16 +583,18 @@ static inline int mprud_inner_poll(uint64_t *posted_cnt, uint64_t *polled_cnt, i
     uint32_t now_polled = cq->context->ops.poll_cq(cq, batch, tmp_wc);
 #endif
 
-
     if (now_polled > 0){
 #ifdef MG_DEBUG_MODE
       printf("[Inner Poll] %d (qp #%d)\n", now_polled, mpctx.poll_turn);
-      //mprud_print_inner_buffer();
+      //if(Iam == MP_SERVER)
+      //  mprud_print_inner_buffer();
 #endif
+      // check validity & reordering & data copy
+      mprud_recv_manage(now_polled);
+
       *polled_cnt += now_polled;
       // Move to next cq only when one polling was successful
-      //if (Iam == MP_SERVER)
-        mpctx.poll_turn = (mpctx.poll_turn + 1) % MPRUD_NUM_PATH;
+      mpctx.poll_turn = (mpctx.poll_turn + 1) % MPRUD_NUM_PATH;
 
       for (int i = 0; i < now_polled; i++) {
         if (tmp_wc[i].status != IBV_WC_SUCCESS) {
@@ -604,11 +629,10 @@ int mprud_poll_cq(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc, int skip_ou
   }
 #ifdef MG_DEBUG_MODE
   else {
-    //printf("Both pkt cnt is 0. Meaning it's done?\n");
+    // Both pkt cnt is 0. Meaning it's done.
     return 0;
   }
 #endif
-printf("mprud_poll_cq - Iam: %d  skip: %d\n", Iam, skip_outer_poll);
   //************************
   // OUTER POLLING
   //************************
@@ -657,6 +681,34 @@ void mprud_print_inner_buffer()
   }
 }
 
+int mprud_destroy_inner_qps()
+{
+  int i;
+
+  for (i=0; i<MPRUD_NUM_PATH; i++){
+    if (mpctx.inner_qps[i]){
+      if (ibv_destroy_qp(mpctx.inner_qps[i]))
+        return FAILURE;
+    }
+  }
+  printf("Destoryed inner qps\n");
+  return SUCCESS;
+}
+
+int mprud_destroy_ah_list()
+{
+  int i;
+
+  for (i=0; i<MPRUD_NUM_PATH; i++){
+    if (ah_list[i]){
+      if (ibv_destroy_ah(ah_list[i]))
+        return FAILURE;
+    }
+  }
+  printf("Destoryed AH list\n");
+  return SUCCESS;
+}
+
 int mprud_destroy_resources()
 {
   if (mprud_destroy_inner_qps())
@@ -671,31 +723,4 @@ clean_err:
   return FAILURE;
 }
 
-int mprud_destroy_inner_qps()
-{
-  int i;
-
-  for (i=0; i<MPRUD_NUM_PATH; i++){
-    if (mpctx.inner_qps[i]){
-      if (ibv_destroy_qp(mpctx.inner_qps[i]))
-        return FAILURE;
-    }
-  }
-  printf("Destoryed inner qps\n", i);
-  return SUCCESS;
-}
-
-int mprud_destroy_ah_list()
-{
-  int i;
-
-  for (i=0; i<MPRUD_NUM_PATH; i++){
-    if (ah_list[i]){
-      if (ibv_destroy_ah(ah_list[i]))
-        return FAILURE;
-    }
-  }
-  printf("Destoryed AH list\n", i);
-  return SUCCESS;
-}
 

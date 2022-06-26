@@ -42,6 +42,7 @@ struct mprud_context {
   int post_turn;   // Used to count inner recv turn
   int poll_turn;
 
+  uint32_t sid;
   uint32_t msg_sqn;
 };
 
