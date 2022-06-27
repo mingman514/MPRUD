@@ -582,7 +582,7 @@ printf("port_num: %d\n", user_param.ib_port);
   if (user_param.machine == SERVER){
     printf("------------ SERVER BUFFER MSG -----------\n");
     char* tmp = ctx.buf[0];
-    printf("%s -- (%p)\n", tmp, tmp);
+    printf("%s -- (%p)\n", tmp+40, tmp+40);
 
   } else {
     printf("------------ CLIENT BUFFER MSG -----------\n");

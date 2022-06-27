@@ -8,12 +8,6 @@
 #include <infiniband/mprud_opt.h>
 
 #define MIN(x,y) (((x) > (y)) ? (y) : (x))
-struct mprud_header{
-  uint32_t sid;
-  uint32_t msg_sqn;
-  uint32_t pkt_sqn;
-};
-
 struct mprud_context {
   struct {
     uint64_t pkt;
@@ -35,15 +29,11 @@ struct mprud_context {
   int send_size;
   int split_num;
   int last_size;
-  char *inner_buf;
   char *outer_buf;
   struct ibv_qp *inner_qps[MPRUD_NUM_PATH];
   struct ibv_ah *ah_list[MPRUD_NUM_PATH];
   int post_turn;   // Used to count inner recv turn
   int poll_turn;
-
-  uint32_t sid;
-  uint32_t msg_sqn;
 };
 
 extern struct mprud_context mpctx;

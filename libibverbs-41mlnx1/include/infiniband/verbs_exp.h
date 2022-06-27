@@ -3663,7 +3663,6 @@ static inline void *ibv_exp_get_provider_func(struct ibv_context *context,
 {
 	struct verbs_context_exp *vctx;
 
-  printf("ibv_exp_get_provider_fucn\n");
 	switch (name) {
 	case IBV_EXP_POST_SEND_FUNC:
 		vctx = verbs_get_exp_ctx_op(context, drv_exp_post_send);

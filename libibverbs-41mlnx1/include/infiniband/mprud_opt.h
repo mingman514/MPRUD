@@ -18,21 +18,19 @@
 
 #define USE_MPRUD
 #define MG_DEBUG_MODE
-//#define SIMULATE_PATH_DISABLED 2  // Path Num
 
 #define MPRUD_NUM_PATH 4
 #define MPRUD_DEFAULT_PORT 1
-#define MPRUD_HEADER_SIZE 12  // Session ID | MSG SQN | Pkt SQN
 /**
  * MPRUD_BUF_SPLIT_NUM must be larger than max send/recv
  * queue size (send_size, recv_size). Otherwise, the buffer
  * will be overlapped before the data is processed.
  **/
-#define MPRUD_BUF_SPLIT_NUM 1024    // Set as default QP size
 #define MPRUD_GRH_SIZE 40
 #define MPRUD_DEFAULT_MTU 4096
-#define MPRUD_SEND_BUF_OFFSET (MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU)
-#define MPRUD_RECV_BUF_OFFSET (MPRUD_GRH_SIZE + MPRUD_HEADER_SIZE + MPRUD_DEFAULT_MTU)
+
+#define MPRUD_SEND_BUF_OFFSET (MPRUD_DEFAULT_MTU)
+#define MPRUD_RECV_BUF_OFFSET (MPRUD_GRH_SIZE + MPRUD_DEFAULT_MTU)
 
 #define MPRUD_POLL_BATCH 16
 
