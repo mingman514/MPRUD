@@ -188,7 +188,6 @@ int mprud_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr, int attr_mask)
 int mprud_create_ah_list(struct ibv_pd *pd,
     struct ibv_qp_init_attr *qp_init_attr)
 {
-  printf("mprud_create_ah_list\n");
   struct ibv_ah_attr *ah_attr;
 
   // is my_gid needed?
@@ -241,6 +240,7 @@ int mprud_create_ah_list(struct ibv_pd *pd,
       return FAILURE;
     }
   }
+  printf("MPRUD created ah_list.\n");
   return SUCCESS;
 }
 /*
@@ -317,17 +317,20 @@ inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct i
   /**
    * Message Splitting
    */
-//  int max_outstd = MIN(mpctx.send_size * MPRUD_NUM_PATH, MPRUD_BUF_SPLIT_NUM);  // MIN(inner queue capacity, buffer capacity)
-  int max_outstd = 128;
+  int max_outstd = 256;
+#ifdef USE_REVERSE_POST
+  char *last_addr = mpctx.outer_buf + (split_num-1) * MPRUD_DEFAULT_MTU;
   for (i = 0; i < split_num; i++){
+    tmp_sge->addr = last_addr - i * MPRUD_DEFAULT_MTU;
 #ifdef MG_DEBUG_MODE
-//    printf("[MPRUD] header in buffer: sid=%u msg_sqn=%u pkt_sqn=%u\n", *(uint32_t*)cur, *((uint32_t*)cur + 1), *((uint32_t*)cur + 2));
-//    printf("[MPRUD] data in buffer: %s\n", cur);
+    printf("last_addr: %p   target addr: %p\n", last_addr, tmp_sge->addr);
 #endif
+#else
+  for (i = 0; i < split_num; i++){
     tmp_sge->addr = wr->sg_list->addr + i * MPRUD_DEFAULT_MTU;
+#endif
     tmp_sge->length = MPRUD_SEND_BUF_OFFSET;
     tmp_wr->sg_list = tmp_sge;
-
     // 4. set ah & remote_qpn
     tmp_wr->wr.ud.ah = ah_list[mpctx.post_turn];
     tmp_wr->wr.ud.remote_qpn = wr->wr.ud.remote_qpn + (mpctx.post_turn + 1);
@@ -400,10 +403,19 @@ inline int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct i
    */
 //  int max_outstd = MIN(mpctx.recv_size * MPRUD_NUM_PATH, MPRUD_BUF_SPLIT_NUM);  // MIN(inner queue capacity, buffer capacity)
   int max_outstd = 512;
-
+#ifdef USE_REVERSE_POST
+  char *last_addr = mpctx.outer_buf + (split_num-1) * MPRUD_DEFAULT_MTU;
+  for (i = 0; i < split_num; i++){
+    // Use size of default MTU to intetionally overwrite GRH part
+    tmp_sge->addr = (last_addr - i * MPRUD_DEFAULT_MTU);
+#ifdef MG_DEBUG_MODE
+    printf("last_addr: %p   target addr: %p\n", last_addr, tmp_sge->addr);
+#endif
+#else
   for (i = 0; i < split_num; i++){
     tmp_sge->addr = mpctx.outer_buf + i * MPRUD_RECV_BUF_OFFSET;
     //tmp_sge->addr = wr->sg_list->addr + i * MPRUD_RECV_BUF_OFFSET;
+#endif
     tmp_sge->length = MPRUD_RECV_BUF_OFFSET;
 
 #ifdef MG_DEBUG_MODE

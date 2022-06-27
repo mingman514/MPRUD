@@ -710,6 +710,7 @@ struct ibv_qp *__ibv_create_qp(struct ibv_pd *pd,
   //~MPRUD by mingman
 
 #ifdef USE_MPRUD
+#ifdef MG_DEBUG_MODE
   // TEMP
   if (1){
        struct ibv_qp_attr attr;
@@ -728,6 +729,7 @@ struct ibv_qp *__ibv_create_qp(struct ibv_pd *pd,
   mprud_set_cq_size(qp->recv_cq->cqe);
   */
        }
+#endif
 #endif
 
 	return qp;

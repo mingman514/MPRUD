@@ -256,7 +256,6 @@ int main(int argc, char *argv[])
 	if (user_param.transport_type == IBV_TRANSPORT_IWARP)
 		ctx.send_rcredit = 1;
 
-printf("port_num: %d\n", user_param.ib_port);
 	/* Allocating arrays needed for the test. */
 	alloc_ctx(&ctx,&user_param);
 
@@ -403,7 +402,6 @@ printf("port_num: %d\n", user_param.ib_port);
 	}
 
 	if (user_param.test_method == RUN_ALL) {
-    printf("[send_bw.c/main] test_method= RUN_ALL\n");
 		if (user_param.connection_type == UD)
 			size_max_pow =  (int)UD_MSG_2_EXP(MTU_SIZE(user_param.curr_mtu)) + 1;
 
@@ -468,7 +466,6 @@ printf("port_num: %d\n", user_param.ib_port);
 		}
 
 	} else if (user_param.test_method == RUN_REGULAR) {
-    printf("[send_bw.c/main] test_method= RUN_REGULAR\n");
 
 		if (user_param.machine == CLIENT || user_param.duplex)
       // WR setting done (ah, rem_qpn, q_key)
@@ -535,7 +532,6 @@ printf("port_num: %d\n", user_param.ib_port);
 			print_full_bw_report(&user_param, &rem_bw_rep, NULL);
 		}
 	} else if (user_param.test_method == RUN_INFINITELY) {
-    printf("[send_bw.c/main] test_method= RUN_INFINITELY\n");
 
 		if (user_param.machine == CLIENT)
 			ctx_set_send_wqes(&ctx,&user_param,rem_dest);

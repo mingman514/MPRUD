@@ -1224,7 +1224,6 @@ int create_comm_struct(struct perftest_comm *comm,
  ******************************************************************************/
 int establish_connection(struct perftest_comm *comm)
 {
-  printf("[debug] establish_connection\n");
 	int (*ptr)(struct perftest_comm*);
 
 	if (comm->rdma_params->use_rdma_cm) {
