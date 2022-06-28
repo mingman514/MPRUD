@@ -17,7 +17,7 @@
   { fprintf(stderr," Cannot Allocate\n"); exit(1);}}
 
 #define USE_MPRUD
-//#define MG_DEBUG_MODE
+#define MG_DEBUG_MODE
 #define USE_REVERSE_POST
 
 #define MPRUD_NUM_PATH 4
@@ -34,6 +34,7 @@
 #define MPRUD_RECV_BUF_OFFSET (MPRUD_GRH_SIZE + MPRUD_DEFAULT_MTU)
 
 #define MPRUD_POLL_BATCH 16
+#define MPRUD_WINDOW_SIZE 4
 
 #define SUCCESS (0)
 #define FAILURE (1)

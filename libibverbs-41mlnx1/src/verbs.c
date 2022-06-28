@@ -350,9 +350,14 @@ struct ibv_mr *__ibv_exp_reg_mr(struct ibv_exp_reg_mr_in *in)
     printf("MPRUD init_ctx failed.\n");
     return NULL;
   }
+  /* Allocate space for ACK pkts */
+  in->length = in->length + MPRUD_GRH_SIZE + sizeof(uint32_t) * MPRUD_NUM_PATH + MPRUD_GRH_SIZE;  //uint32_t * numofpath
+
   struct ibv_mr *mr = __ibv_common_reg_mr(in, ctx);
-  mprud_set_outer_buffer(mr->addr);
+  mprud_set_outer_buffer(mr->addr, mr->length);
+#ifdef MG_DEBUG_MODE
   printf("buffer size : %d\n", mr->length);
+#endif
   
   return mr;
 #else
@@ -709,29 +714,6 @@ struct ibv_qp *__ibv_create_qp(struct ibv_pd *pd,
 #endif
   //~MPRUD by mingman
 
-#ifdef USE_MPRUD
-#ifdef MG_DEBUG_MODE
-  // TEMP
-  if (1){
-       struct ibv_qp_attr attr;
-         struct ibv_qp_init_attr init_attr;
-         ibv_query_qp(qp,&attr, 0, &init_attr);
-
-         printf("max send: %u |  max recv: %u | send_cqe: %u | recv_cqe: %u\n", init_attr.cap.max_send_wr, init_attr     .cap.max_recv_wr, qp->send_cq->cqe, qp->recv_cq->cqe);
-         printf("Outer QP --> qkey: %u qp_num: %u  dlid: %d  dest_qp_num: %u\n", attr.qkey, qp->qp_num, attr.ah_attr.dlid, attr.dest_qp_num);
-  // Set recv&send qp size
-/*  mprud_set_send_size(qp_init_attr->cap.max_send_wr);
-  mprud_set_recv_size(qp_init_attr->cap.max_recv_wr);
-  mprud_set_cq_size(qp_init_attr->cap.max_recv_wr);
-  */
-  /*mprud_set_send_size(512);
-  mprud_set_recv_size(512);
-  mprud_set_cq_size(qp->recv_cq->cqe);
-  */
-       }
-#endif
-#endif
-
 	return qp;
 }
 default_symver(__ibv_create_qp, ibv_create_qp);
@@ -769,6 +751,33 @@ int __ibv_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
   ret = mprud_modify_qp(qp, attr, attr_mask);
   if (ret)
     return ret;
+#endif
+
+#ifdef USE_MPRUD
+  // Get remote QPN when RC
+  if (qp->qp_type != IBV_QPT_UD && attr->qp_state == IBV_QPS_RTR){
+    mprud_set_dest_qp_num(attr->dest_qp_num);
+  } 
+#ifdef MG_DEBUG_MODE
+  // TEMP
+  if (0){
+       struct ibv_qp_attr attr;
+         struct ibv_qp_init_attr init_attr;
+         ibv_query_qp(qp,&attr, 0, &init_attr);
+
+         printf("max send: %u |  max recv: %u | send_cqe: %u | recv_cqe: %u\n", init_attr.cap.max_send_wr, init_attr     .cap.max_recv_wr, qp->send_cq->cqe, qp->recv_cq->cqe);
+         printf("Outer QP --> qkey: %u qp_num: %u  dlid: %d  dest_qp_num: %u\n", attr.qkey, qp->qp_num, attr.ah_attr.dlid, attr.dest_qp_num);
+  // Set recv&send qp size
+/*  mprud_set_send_size(qp_init_attr->cap.max_send_wr);
+  mprud_set_recv_size(qp_init_attr->cap.max_recv_wr);
+  mprud_set_cq_size(qp_init_attr->cap.max_recv_wr);
+  */
+  /*mprud_set_send_size(512);
+  mprud_set_recv_size(512);
+  mprud_set_cq_size(qp->recv_cq->cqe);
+  */
+       }
+#endif
 #endif
 
 	return 0;
