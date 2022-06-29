@@ -8,6 +8,13 @@
 #include <infiniband/mprud_opt.h>
 
 #define MIN(x,y) (((x) > (y)) ? (y) : (x))
+
+struct mprud_wqe {
+  uint64_t id;
+  struct ibv_send_wr swr;
+  struct ibv_recv_wr rwr;
+};
+
 struct mprud_context {
   struct {
     uint64_t pkt;
@@ -34,6 +41,13 @@ struct mprud_context {
   struct ibv_ah *ah_list[MPRUD_NUM_PATH];
   int post_turn;   // Used to count inner recv turn
   int poll_turn;
+  uint32_t dest_qp_num;
+  struct {
+    int head;
+    int next;
+    uint64_t sqn;
+    struct mprud_wqe wqe[MPRUD_TABLE_LEN];
+  }wqe_table;
 };
 
 extern struct mprud_context mpctx;
@@ -52,8 +66,7 @@ int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct ibv_recv
 int mprud_create_ah_list(struct ibv_pd *pd, struct ibv_qp_init_attr *qp_init_attr);
 int mprud_create_inner_qps(struct ibv_pd *pd, struct ibv_qp_init_attr *qp_init_attr);
 int mprud_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr, int attr_mask);
-char *mprud_get_inner_buffer();
-void mprud_set_inner_buffer(void* ptr);
+void mprud_set_dest_qp_num(uint32_t qp_num);
 char *mprud_get_outer_buffer();
 void mprud_set_outer_buffer(void* ptr);
 //void mprud_set_recv_size(int size);

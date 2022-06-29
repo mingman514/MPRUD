@@ -350,6 +350,7 @@ struct ibv_mr *__ibv_exp_reg_mr(struct ibv_exp_reg_mr_in *in)
     printf("MPRUD init_ctx failed.\n");
     return NULL;
   }
+  in->length += MPRUD_DEFAULT_MTU * MPRUD_NUM_PATH + MPRUD_SEND_BUF_SIZE + MPRUD_RECV_BUF_SIZE;
   struct ibv_mr *mr = __ibv_common_reg_mr(in, ctx);
   mprud_set_outer_buffer(mr->addr);
   printf("buffer size : %d\n", mr->length);
@@ -769,6 +770,10 @@ int __ibv_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
   ret = mprud_modify_qp(qp, attr, attr_mask);
   if (ret)
     return ret;
+  // Get remote QPN when RC
+  if (qp->qp_type != IBV_QPT_UD && attr->qp_state == IBV_QPS_RTR){
+    mprud_set_dest_qp_num(attr->dest_qp_num);
+  }
 #endif
 
 	return 0;
