@@ -9,29 +9,35 @@
 
 #define MIN(x,y) (((x) > (y)) ? (y) : (x))
 
+struct qp_status {
+  struct {
+    uint64_t pkt;
+    uint64_t ack;
+  }posted_scnt;
+  struct {
+    uint64_t pkt;
+    uint64_t ack;
+  }posted_rcnt;
+  struct {
+    uint64_t pkt;
+    uint64_t ack;
+  }polled_scnt;
+  struct {
+    uint64_t pkt;
+    uint64_t ack;
+  }polled_rcnt;
+
+  int wqe_idx;  // currently working wqe idx
+};
+
 struct mprud_wqe {
   uint64_t id;
   struct ibv_send_wr swr;
   struct ibv_recv_wr rwr;
+  int iter_each[MPRUD_NUM_PATH];
 };
 
 struct mprud_context {
-  struct {
-    uint64_t pkt;
-    uint64_t ack;
-  } posted_scnt;
-  struct {
-    uint64_t pkt;
-    uint64_t ack;
-  } posted_rcnt;
-  struct {
-    uint64_t pkt;
-    uint64_t ack;
-  } polled_scnt;
-  struct {
-    uint64_t pkt;
-    uint64_t ack;
-  } polled_rcnt;
   int recv_size;
   int send_size;
   int split_num;
@@ -53,6 +59,11 @@ struct mprud_context {
     char *send; // send control pkt
     char* recv; // recv control pkt
   }buf;
+  struct qp_status qp_stat[MPRUD_NUM_PATH];
+  uint64_t tot_rposted;
+  uint64_t tot_rpolled;
+  uint64_t tot_sposted; // only pkt not ack
+  uint64_t tot_spolled;
 };
 
 extern struct mprud_context mpctx;

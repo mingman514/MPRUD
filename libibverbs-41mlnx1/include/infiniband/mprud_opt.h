@@ -17,7 +17,7 @@
   { fprintf(stderr," Cannot Allocate\n"); exit(1);}}
 
 #define USE_MPRUD
-#define MG_DEBUG_MODE
+//#define MG_DEBUG_MODE
 #define MPRUD_CHUNK_MODE
 
 #define MPRUD_NUM_PATH 4
