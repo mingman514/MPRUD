@@ -48,6 +48,11 @@ struct mprud_context {
     uint64_t sqn;
     struct mprud_wqe wqe[MPRUD_TABLE_LEN];
   }wqe_table;
+  struct{
+    char *sub;  // for last pkt of each chunk
+    char *send; // send control pkt
+    char* recv; // recv control pkt
+  }buf;
 };
 
 extern struct mprud_context mpctx;
@@ -68,7 +73,7 @@ int mprud_create_inner_qps(struct ibv_pd *pd, struct ibv_qp_init_attr *qp_init_a
 int mprud_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr, int attr_mask);
 void mprud_set_dest_qp_num(uint32_t qp_num);
 char *mprud_get_outer_buffer();
-void mprud_set_outer_buffer(void* ptr);
+void mprud_set_outer_buffer(void* ptr, uint32_t len);
 //void mprud_set_recv_size(int size);
 //void mprud_set_send_size(int size);
 //void mprud_set_cq_size(int size);

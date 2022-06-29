@@ -244,13 +244,20 @@ int mprud_create_ah_list(struct ibv_pd *pd,
   return SUCCESS;
 }
 
-void mprud_set_outer_buffer(void* ptr)
+void mprud_set_outer_buffer(void* ptr, uint32_t len)
 {
-#ifdef MG_DEBUG_MODE
-  printf("Set Outer Buffer to [%p]\n", ptr);
-#endif
 
   mpctx.outer_buf = ptr;
+  // register other base ptr
+  mpctx.buf.sub = ptr + len;
+  mpctx.buf.send = mpctx.buf.sub + (MPRUD_DEFAULT_MTU + MPRUD_GRH_SIZE) * MPRUD_NUM_PATH;
+  mpctx.buf.recv = mpctx.buf.send + MPRUD_SEND_BUF_SIZE;;
+
+#ifdef MG_DEBUG_MODE
+  printf("Set Outer Buffer to [%p]\n", ptr);
+  printf("sub: %p  send: %p  recv: %p\n", mpctx.buf.sub, mpctx.buf.send, mpctx.buf.recv);
+#endif
+
 }
 
 void mprud_set_dest_qp_num(uint32_t qp_num)
@@ -287,20 +294,22 @@ inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct i
   uint32_t chunk_size = size / MPRUD_NUM_PATH;
   uint32_t left = size - chunk_size * MPRUD_NUM_PATH;
   // always let the last QP handles the left size
-  uint32_t iter = (chunk_size / MPRUD_DEFAULT_MTU);
-  if (chunk_size % MPRUD_DEFAULT_MTU)
-    iter += 1;
-  iter *= MPRUD_NUM_PATH;
+  uint32_t iter_each = (chunk_size / MPRUD_DEFAULT_MTU);
+  uint32_t last_size = chunk_size % MPRUD_DEFAULT_MTU;
+  if (last_size)
+    iter_each += 1;
+  uint32_t iter = iter_each * MPRUD_NUM_PATH;
   if (left > 0 && left <= MPRUD_DEFAULT_MTU)
     iter += 1;
   
-  printf("chunk: %u  left: %u iter: %u\n", chunk_size, left, iter);
+  printf("chunk_size: %u  left: %u iter_each: %u  iter: %u last_size: %u\n", chunk_size, left, iter_each, iter, last_size);
 
   uint64_t base_addr[MPRUD_NUM_PATH];
   for (int i=0; i<MPRUD_NUM_PATH; i++){
     base_addr[i] = wr->sg_list->addr + chunk_size * (i+1);
     if (i == MPRUD_NUM_PATH - 1)
       base_addr[i] += left;
+    printf("base address #%d: %p\n", i, base_addr[i]);
   }
 #else
   last_size = size % MPRUD_DEFAULT_MTU ? size % MPRUD_DEFAULT_MTU : MPRUD_DEFAULT_MTU;
@@ -343,22 +352,36 @@ inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct i
    * Message Splitting
    */
   int max_outstd = 256;
-  int chk_turn;
 #ifdef MPRUD_CHUNK_MODE
-  for (int i=0; i<iter; i++){
+  int chk_turn, msg_length;
+  for (i = 0; i < iter; i++){
     chk_turn = i % MPRUD_NUM_PATH;
-
     tmp_sge->addr = base_addr[chk_turn] - (i/MPRUD_NUM_PATH) * MPRUD_DEFAULT_MTU;
-    if (i==iter-1)
-      tmp_sge->addr = tmp_sge->addr + MPRUD_DEFAULT_MTU - left;
-    tmp_sge->length = MPRUD_SEND_BUF_OFFSET;
+
+    if (i == iter-1){
+      // last iter
+      msg_length = left;
+      tmp_sge->addr += MPRUD_DEFAULT_MTU - msg_length;
+      // CAUTION: Use last QP available
+      chk_turn = MPRUD_NUM_PATH - 1;
+    }
+    else if (i % iter_each == 0){
+      // chunk last msg
+      msg_length = last_size;
+      tmp_sge->addr += MPRUD_DEFAULT_MTU - msg_length;
+
+    } else {
+      msg_length = MPRUD_DEFAULT_MTU;
+    }
+    tmp_sge->length = msg_length;
+
     tmp_wr->sg_list = tmp_sge;
     // 4. set ah & remote_qpn
     tmp_wr->wr.ud.ah = ah_list[chk_turn];
     tmp_wr->wr.ud.remote_qpn = mpctx.dest_qp_num + (chk_turn + 1);
     tmp_wr->wr.ud.remote_qkey = 0x22222222;
-  
-    printf("addr: %lx   length: %d\n", tmp_wr->sg_list->addr, tmp_wr->sg_list->length);
+
+    printf("[#%d] addr: %lx   length: %d\n", i, tmp_wr->sg_list->addr, tmp_wr->sg_list->length);
 
     // 5. post_send
     err = ibqp->context->ops.post_send(mpctx.inner_qps[chk_turn], tmp_wr, bad_wr, 1); // original post send
@@ -367,11 +390,11 @@ inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct i
 #ifdef MG_DEBUG_MODE
     printf("last_addr: %p   target addr: %p\n", last_addr, tmp_sge->addr);
 #endif
-  for (i = 0; i < split_num; i++){
-    tmp_sge->addr = wr->sg_list->addr + i * MPRUD_DEFAULT_MTU;
-    tmp_sge->length = MPRUD_SEND_BUF_OFFSET;
-    tmp_wr->sg_list = tmp_sge;
-    // 4. set ah & remote_qpn
+    for (i = 0; i < split_num; i++){
+      tmp_sge->addr = wr->sg_list->addr + i * MPRUD_DEFAULT_MTU;
+      tmp_sge->length = MPRUD_SEND_BUF_OFFSET;
+      tmp_wr->sg_list = tmp_sge;
+      // 4. set ah & remote_qpn
     tmp_wr->wr.ud.ah = ah_list[mpctx.post_turn];
     tmp_wr->wr.ud.remote_qpn = mpctx.dest_qp_num + (mpctx.post_turn + 1);
     tmp_wr->wr.ud.remote_qkey = 0x22222222;
@@ -408,27 +431,31 @@ inline int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct i
   mprud_store_wr(NULL, wr);
 
   int i, err;
-  uint32_t size_with_grh = wr->sg_list->length;
-  uint32_t size = size_with_grh - MPRUD_GRH_SIZE;
+  uint32_t size = wr->sg_list->length;
+  if(ibqp->qp_type == IBV_QPT_UD)
+    size -= MPRUD_GRH_SIZE;
 #ifdef MPRUD_CHUNK_MODE
   /* Only when MPRUD_NUM_PATH less than default MTU */
   uint32_t chunk_size = size / MPRUD_NUM_PATH;
   uint32_t left = size - chunk_size * MPRUD_NUM_PATH;
   // always let the last QP handles the left size
-  uint32_t iter = (chunk_size / MPRUD_DEFAULT_MTU);
-  if (chunk_size % MPRUD_DEFAULT_MTU)
-    iter += 1;
-  iter *= MPRUD_NUM_PATH;
+  uint32_t iter_each = (chunk_size / MPRUD_DEFAULT_MTU);
+  uint32_t last_size = chunk_size % MPRUD_DEFAULT_MTU;
+  if (last_size)
+    iter_each += 1;
+  uint32_t iter = iter_each * MPRUD_NUM_PATH;
   if (left > 0 && left <= MPRUD_DEFAULT_MTU)
     iter += 1;
 
-  printf("chunk: %u  left: %u iter: %u\n", chunk_size, left, iter);
 
+  printf("chunk_size: %u  left: %u iter_each: %u  iter: %u last_size: %u\n", chunk_size, left, iter_each, iter, last_size);
   uint64_t base_addr[MPRUD_NUM_PATH];
   for (int i=0; i<MPRUD_NUM_PATH; i++){
-    base_addr[i] = wr->sg_list->addr + chunk_size * (i+1);
+    base_addr[i] = wr->sg_list->addr + chunk_size * (i+1) + MPRUD_GRH_SIZE;
     if (i == MPRUD_NUM_PATH - 1)
       base_addr[i] += left;
+
+    printf("base address #%d: %p\n", i, base_addr[i]);
   }
 #else
   last_size = size % MPRUD_DEFAULT_MTU ? size % MPRUD_DEFAULT_MTU : MPRUD_DEFAULT_MTU;
@@ -461,26 +488,44 @@ inline int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct i
    */
 //  int max_outstd = MIN(mpctx.recv_size * MPRUD_NUM_PATH, MPRUD_BUF_SPLIT_NUM);  // MIN(inner queue capacity, buffer capacity)
   int max_outstd = 512;
-  int chk_turn;
 #ifdef MPRUD_CHUNK_MODE
+  int chk_turn, msg_length;
   for (i = 0; i < iter; i++){
     chk_turn = i % MPRUD_NUM_PATH;
     tmp_sge->addr = base_addr[chk_turn] - (i/MPRUD_NUM_PATH) * MPRUD_DEFAULT_MTU;
-    if (i==iter-1)
-      tmp_sge->addr = tmp_sge->addr + MPRUD_DEFAULT_MTU - left;
-    tmp_sge->length = MPRUD_RECV_BUF_OFFSET;
 
+    if (i == iter-1){
+        // last iter
+        msg_length = left;
+        tmp_sge->addr += MPRUD_DEFAULT_MTU - msg_length;
+        // CAUTION: Use last QP available
+        chk_turn = MPRUD_NUM_PATH - 1;
+      }
+      else if (i % iter_each == 0){
+        // chunk last msg
+        msg_length = last_size;
+        tmp_sge->addr += MPRUD_DEFAULT_MTU - msg_length;
+
+      } else {
+        msg_length = MPRUD_DEFAULT_MTU;
+      }
+      tmp_sge->length = msg_length + MPRUD_GRH_SIZE;
+      tmp_sge->addr -= MPRUD_GRH_SIZE;
+
+      tmp_wr->sg_list = tmp_sge;
+      
+    printf("[#%d] addr: %lx   length: %d\n", i, tmp_wr->sg_list->addr, tmp_wr->sg_list->length);
+      
 #ifdef MG_DEBUG_MODE
-    printf("[MPRUD] Msg #%d) addr: %lx\tlength: %u\n", i, tmp_sge->addr, tmp_sge->length);
+      printf("[MPRUD] Msg #%d) addr: %lx\tlength: %u\n", i, tmp_sge->addr, tmp_sge->length);
 #endif
-    tmp_wr->sg_list = tmp_sge;
 
-    printf("addr: %lx   length: %d\n", tmp_wr->sg_list->addr, tmp_wr->sg_list->length);
-    // 3. post_recv
-    err = ibqp->context->ops.post_recv(mpctx.inner_qps[chk_turn], tmp_wr, bad_wr, 1);  // original post recv
+      printf("addr: %lx   length: %d\n", tmp_wr->sg_list->addr, tmp_wr->sg_list->length);
+      // 3. post_recv
+      err = ibqp->context->ops.post_recv(mpctx.inner_qps[chk_turn], tmp_wr, bad_wr, 1);  // original post recv
 
-    chk_turn = (chk_turn + 1) % MPRUD_NUM_PATH;
-    *posted_cnt += 1;
+      chk_turn = (chk_turn + 1) % MPRUD_NUM_PATH;
+      *posted_cnt += 1;
 #else
 #ifdef MG_DEBUG_MODE
     printf("last_addr: %p   target addr: %p\n", last_addr, tmp_sge->addr);
