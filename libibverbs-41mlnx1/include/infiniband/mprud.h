@@ -35,6 +35,8 @@ struct mprud_wqe {
   struct ibv_send_wr swr;
   struct ibv_recv_wr rwr;
   int iter_each[MPRUD_NUM_PATH];
+  int chnk_last;
+  int msg_last;
 };
 
 struct mprud_context {
