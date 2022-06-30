@@ -9,6 +9,14 @@
 
 #define MIN(x,y) (((x) > (y)) ? (y) : (x))
 
+struct path_manager {
+  int active_num;
+  int is_active[MPRUD_NUM_PATH];
+  struct ibv_qp *report_qp;
+  char *send_base_addr;
+  char *recv_base_addr;
+};
+
 struct qp_status {
   struct {
     uint64_t pkt;
@@ -31,6 +39,7 @@ struct qp_status {
 };
 
 struct mprud_wqe {
+  int valid;
   uint64_t id;
   struct ibv_send_wr swr;
   struct ibv_recv_wr rwr;
@@ -58,6 +67,7 @@ struct mprud_context {
   }wqe_table;
   struct{
     char *sub;  // for last pkt of each chunk
+    char *last; // for last pkt of msg
     char *send; // send control pkt
     char* recv; // recv control pkt
   }buf;
@@ -66,6 +76,8 @@ struct mprud_context {
   uint64_t tot_rpolled;
   uint64_t tot_sposted; // only pkt not ack
   uint64_t tot_spolled;
+
+  struct path_manager mp_manager; 
 };
 
 extern struct mprud_context mpctx;
@@ -83,6 +95,7 @@ int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct ibv_send
 int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct ibv_recv_wr **bad_wr);
 int mprud_create_ah_list(struct ibv_pd *pd, struct ibv_qp_init_attr *qp_init_attr);
 int mprud_create_inner_qps(struct ibv_pd *pd, struct ibv_qp_init_attr *qp_init_attr);
+int mprud_modify_report_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr_);
 int mprud_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr, int attr_mask);
 void mprud_set_dest_qp_num(uint32_t qp_num);
 char *mprud_get_outer_buffer();

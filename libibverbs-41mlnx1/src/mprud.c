@@ -123,6 +123,62 @@ int mprud_create_inner_qps(struct ibv_pd *pd, struct ibv_qp_init_attr *qp_init_a
     mpctx.inner_qps[i] = pd->context->ops.create_qp(pd, &iqp_init_attr);   
   }
 
+  // Create QP for reporting
+  struct ibv_cq *send_cq;
+  send_cq = pd->context->ops.create_cq(pd->context, mpctx.send_size * 2, NULL, 0);
+  // Need recv_cq for each inner QPs
+  struct ibv_cq *recv_cq;
+  recv_cq = pd->context->ops.create_cq(pd->context, mpctx.recv_size * 2, NULL, 0);
+
+  iqp_init_attr.send_cq = send_cq;
+  iqp_init_attr.recv_cq = recv_cq;
+  iqp_init_attr.qp_type = IBV_QPT_UD;
+
+  mpctx.mp_manager.report_qp = pd->context->ops.create_qp(pd, &iqp_init_attr);
+
+  return SUCCESS;
+}
+
+inline int mprud_modify_report_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr_)
+{
+  struct ibv_qp_attr attr;
+
+/*  memset(&attr, 0, sizeof(attr));
+
+  attr.qp_state        = IBV_QPS_INIT;
+  attr.pkey_index      = 0;
+  attr.port_num        = my_port;
+  attr.qkey            = 0x22222222;*/
+
+  if (qp->context->ops.modify_qp(qp, attr_,
+        IBV_QP_STATE      |
+        IBV_QP_PKEY_INDEX |
+        IBV_QP_PORT       |
+        IBV_QP_QKEY)) {
+    fprintf(stderr, "Failed to modify QP to INIT\n");
+    return FAILURE;
+  }
+
+  memset(&attr, 0, sizeof(attr));
+
+  attr.qp_state   = IBV_QPS_RTR;
+
+  if (qp->context->ops.modify_qp(qp, &attr, IBV_QP_STATE)) {
+    fprintf(stderr, "Failed to modify QP to RTR\n");
+    return FAILURE;
+  }
+
+  memset(&attr, 0, sizeof(attr));
+
+  attr.qp_state     = IBV_QPS_RTS;
+  attr.sq_psn     = 0;
+
+  if (qp->context->ops.modify_qp(qp, &attr,
+        IBV_QP_STATE |
+        IBV_QP_SQ_PSN)) {
+    fprintf(stderr, "Failed to modify QP to RTS\n");
+    return FAILURE;
+  }
   return SUCCESS;
 }
 
@@ -145,6 +201,14 @@ int mprud_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr, int attr_mask)
         return FAILURE;
       }
     }
+
+    // Modify State here  
+    ret = mprud_modify_report_qp(mpctx.mp_manager.report_qp, &iqp_attr);
+    if (ret){
+      printf("Failed to modify Report QP state\n");
+      return FAILURE;
+    }
+
 
   } else if (attr->qp_state == IBV_QPS_RTR){
 
@@ -171,7 +235,15 @@ int mprud_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr, int attr_mask)
         return FAILURE;
       }
     }
-
+#ifdef MG_DEBUG_MODE
+    for(int i =0; i<MPRUD_NUM_PATH; i++){
+      struct ibv_qp_attr attr;
+      struct ibv_qp_init_attr init_attr;
+      ibv_query_qp(mpctx.inner_qps[i],&attr, 0, &init_attr);
+      printf("[%d] qkey: %u qp_num: %u  dlid: %d  dest_qp_num: %u\n", i, attr.qkey, mpctx.inner_qps[i    ]->qp_num, attr.ah_attr.dlid, attr.dest_qp_num);
+    }
+    printf("Report QP NUM: %d\n", mpctx.mp_manager.report_qp->qp_num);
+#endif
   }
   return SUCCESS;
 }
@@ -234,9 +306,10 @@ void mprud_set_outer_buffer(void* ptr, uint32_t len)
 
   mpctx.outer_buf = ptr;
   // register other base ptr
-  mpctx.buf.sub = ptr + len;
-  mpctx.buf.send = mpctx.buf.sub + (MPRUD_DEFAULT_MTU + MPRUD_GRH_SIZE) * MPRUD_NUM_PATH;
-  mpctx.buf.recv = mpctx.buf.send + MPRUD_SEND_BUF_SIZE;;
+  mpctx.buf.recv = ptr + len - MPRUD_RECV_BUF_SIZE;
+  mpctx.buf.send = mpctx.buf.recv - MPRUD_SEND_BUF_SIZE;
+  mpctx.buf.last = mpctx.buf.send - (MPRUD_DEFAULT_MTU + MPRUD_GRH_SIZE);
+  mpctx.buf.sub = mpctx.buf.send - (MPRUD_DEFAULT_MTU + MPRUD_GRH_SIZE) * MPRUD_NUM_PATH; // additional 1 is for msg_last pkt.
 
 #ifdef MG_DEBUG_MODE
   printf("Set Outer Buffer to [%p]\n", ptr);
@@ -267,6 +340,7 @@ void mprud_store_wr(struct ibv_send_wr *swr, struct ibv_recv_wr *rwr, int iter_e
 
   wqe->chnk_last = chnk_last;
   wqe->msg_last = msg_last;
+  wqe->valid = 1;
 
   int turn;
   for (int i=0; i<MPRUD_NUM_PATH; i++){
@@ -301,6 +375,9 @@ inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct i
   uint32_t chnk_last = chunk_size % MPRUD_DEFAULT_MTU;
   if (chnk_last)
     iter_each += 1;
+  else
+    chnk_last = MPRUD_DEFAULT_MTU;
+
   uint32_t iter = iter_each * MPRUD_NUM_PATH;
   if (msg_last > 0 && msg_last <= MPRUD_DEFAULT_MTU)
     iter += 1;
@@ -351,24 +428,44 @@ inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct i
   for (i = 0; i < iter; i++){
     tmp_sge->addr = base_addr[mpctx.post_turn] - (i/MPRUD_NUM_PATH + 1) * MPRUD_DEFAULT_MTU;
 
-    if (i == iter-1){
+    // LAST MSG NOT EXIST
+    if (!msg_last){
 
-      // last iter
-      msg_length = msg_last;
-      tmp_sge->addr = base_addr[MPRUD_NUM_PATH-1];
+      if (iter - i <= MPRUD_NUM_PATH){
 
-    } else if (i % iter_each == 0){
+        // last iter
+        msg_length = chnk_last;
+        tmp_sge->addr += MPRUD_DEFAULT_MTU - msg_length;
 
-      // chunk last msg
-      msg_length = chnk_last;
-      tmp_sge->addr += MPRUD_DEFAULT_MTU - msg_length;
+      } else {
 
+        msg_length = MPRUD_DEFAULT_MTU;
+
+      }
     } else {
-      msg_length = MPRUD_DEFAULT_MTU;
-    }
-    tmp_sge->length = msg_length;
 
+      // LAST MSG EXIST
+      if (i == iter-1){
+
+        msg_length = msg_last;
+        tmp_sge->addr = base_addr[MPRUD_NUM_PATH-1];
+
+      } else if (iter-i-1 <= MPRUD_NUM_PATH) {
+
+        // last iter
+        msg_length = chnk_last;
+        tmp_sge->addr += MPRUD_DEFAULT_MTU - msg_length;
+
+      } else {
+        
+        msg_length = MPRUD_DEFAULT_MTU;
+
+      }
+    }
+
+    tmp_sge->length = msg_length;
     tmp_wr->sg_list = tmp_sge;
+
     // 4. set ah & remote_qpn
     tmp_wr->wr.ud.ah = ah_list[mpctx.post_turn];
     tmp_wr->wr.ud.remote_qpn = mpctx.dest_qp_num + (mpctx.post_turn + 1);
@@ -414,6 +511,9 @@ inline int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct i
   uint32_t chnk_last = chunk_size % MPRUD_DEFAULT_MTU;
   if (chnk_last)
     iter_each += 1;
+  else
+    chnk_last = MPRUD_DEFAULT_MTU;
+
   uint32_t iter = iter_each * MPRUD_NUM_PATH;
   if (msg_last > 0 && msg_last <= MPRUD_DEFAULT_MTU)
     iter += 1;
@@ -426,7 +526,7 @@ inline int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct i
   uint64_t base_addr[MPRUD_NUM_PATH];
   for (int i=0; i<MPRUD_NUM_PATH; i++){
     base_addr[i] = wr->sg_list->addr + chunk_size * (i + 1) + MPRUD_GRH_SIZE;
-    //printf("base address #%d: %p\n", i, base_addr[i]);
+    //printf("addr: %x  chunk_size: %d   grh: %d   base address #%d: %p\n",wr->sg_list->addr, chunk_size, MPRUD_GRH_SIZE, i, base_addr[i]);
   }
 
 #ifdef MG_DEBUG_MODE
@@ -454,22 +554,39 @@ inline int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct i
   for (i = 0; i < iter; i++){
     tmp_sge->addr = base_addr[mpctx.post_turn] - (i/MPRUD_NUM_PATH + 1) * MPRUD_DEFAULT_MTU;
 
-    if (i == iter-1){
+    // LAST MSG NOT EXIST
+    if (!msg_last){
 
-      // last iter
-      msg_length = msg_last;
-      tmp_sge->addr = mpctx.buf.sub + (MPRUD_DEFAULT_MTU + MPRUD_GRH_SIZE); // use the first QP buf. first QP does not need buf qp
+      if (iter - i <= MPRUD_NUM_PATH){   
 
-    } else if (i % iter_each == 0 && mpctx.post_turn != 0){   // first qp goes to normal ops (might need change for path failure)
+        // chunk last msg
+        msg_length = chnk_last;
+        tmp_sge->addr = mpctx.buf.sub + (MPRUD_DEFAULT_MTU + MPRUD_GRH_SIZE) * mpctx.post_turn;
+      } else {
 
-      // chunk last msg
-      msg_length = chnk_last;
-      tmp_sge->addr = mpctx.buf.sub + (MPRUD_DEFAULT_MTU + MPRUD_GRH_SIZE) * mpctx.post_turn;
+        msg_length = MPRUD_DEFAULT_MTU;
 
+      }
     } else {
 
-      msg_length = MPRUD_DEFAULT_MTU;
+      // LAST MSG EXIST
+      if (i == iter-1){
 
+        // last msg
+        msg_length = msg_last;
+        tmp_sge->addr = mpctx.buf.last; 
+
+      } else if (iter-i-1 <= MPRUD_NUM_PATH) {
+
+        // chunk last msg
+        msg_length = chnk_last;
+        tmp_sge->addr = mpctx.buf.sub + (MPRUD_DEFAULT_MTU + MPRUD_GRH_SIZE) * mpctx.post_turn;
+
+      } else {
+
+        msg_length = MPRUD_DEFAULT_MTU;
+
+      }
     }
 
     tmp_sge->length = msg_length + MPRUD_GRH_SIZE;
@@ -480,7 +597,6 @@ inline int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct i
 
 #ifdef MG_DEBUG_MODE
     printf("[#%d] addr: %lx   length: %d\n", mpctx.post_turn, tmp_wr->sg_list->addr, tmp_wr->sg_list->length);
-    printf("[MPRUD] Msg #%d) addr: %lx\tlength: %u\n", i, tmp_sge->addr, tmp_sge->length);
 #endif
 
     // 3. post_recv
@@ -509,8 +625,6 @@ static inline uint32_t mprud_get_outer_poll(int Iam)
   struct mprud_wqe *wqe = &mpctx.wqe_table.wqe[mpctx.wqe_table.head];
   int comp_flag = 1;
 
-
-
   if (Iam == MP_SERVER){
     for (int i=0; i<MPRUD_NUM_PATH; i++){
       if (mpctx.qp_stat[i].polled_rcnt.pkt < wqe->iter_each[i]){
@@ -521,6 +635,25 @@ static inline uint32_t mprud_get_outer_poll(int Iam)
 
     // update polled cnt
     if (comp_flag){
+#ifdef MG_DEBUG_MODE
+      printf("POSTED\n");
+      for(int i=0; i<MPRUD_NUM_PATH; i++){
+        printf("%d  ", mpctx.qp_stat[i].posted_rcnt.pkt);
+
+      }
+      printf("\nPOLLED\n");
+
+      for(int i=0; i<MPRUD_NUM_PATH; i++){
+        printf("%d  ", mpctx.qp_stat[i].polled_rcnt.pkt);
+      }
+      printf("\nNeeded\n");
+
+      for(int i=0; i<MPRUD_NUM_PATH; i++){
+        printf("%d  ", mpctx.wqe_table.wqe[mpctx.wqe_table.head].iter_each[i]);
+      }
+      printf("\n----------------------------\n");
+
+#endif
       for (int i=0; i<MPRUD_NUM_PATH; i++){
         mpctx.qp_stat[i].polled_rcnt.pkt -= wqe->iter_each[i];
       }
@@ -536,8 +669,6 @@ static inline uint32_t mprud_get_outer_poll(int Iam)
 
     // update polled cnt
     if (comp_flag){
-      int poll_turn = mpctx.poll_turn;
-      struct qp_status *qp_stat = &mpctx.qp_stat[poll_turn];
 
       for (int i=0; i<MPRUD_NUM_PATH; i++){
         mpctx.qp_stat[i].polled_scnt.pkt -= wqe->iter_each[i];
@@ -548,6 +679,7 @@ static inline uint32_t mprud_get_outer_poll(int Iam)
 
   if (comp_flag){
     // update head
+    memset(&mpctx.wqe_table.wqe[mpctx.wqe_table.head], 0, sizeof(struct mprud_wqe));
     mpctx.wqe_table.head += 1;
     if (mpctx.wqe_table.head == MPRUD_TABLE_LEN)
       mpctx.wqe_table.head = 0;
@@ -632,13 +764,19 @@ static inline int mprud_inner_poll(int Iam)
         uint64_t addr = wqe->rwr.sg_list->addr;
         uint32_t length = wqe->rwr.sg_list->length;
         int size = wqe->chnk_last;
-        for (int i=0 ; i<MPRUD_NUM_PATH; i++){
-          addr += (length / MPRUD_NUM_PATH) * (i+1);
-          if (i == MPRUD_NUM_PATH - 1)
-           size = wqe->msg_last; 
-          memcpy(addr, mpctx.buf.recv + MPRUD_GRH_SIZE, size);
-         }
+        for (int i=0; i<MPRUD_NUM_PATH; i++){
+          addr += (length / MPRUD_NUM_PATH) * i;
+
+          // copy the msg_last if exist
+          if (i == MPRUD_NUM_PATH - 1 && wqe->msg_last > 0){
+            memcpy(addr, mpctx.buf.last + MPRUD_GRH_SIZE, wqe->msg_last);
+
+          } else {
+            memcpy(addr, mpctx.buf.recv + MPRUD_GRH_SIZE + (MPRUD_GRH_SIZE + MPRUD_DEFAULT_MTU)*i, size);
+          }
+        }
         qp_stat->wqe_idx += 1;
+
       }
 
       // Move to next cq only when one polling was successful
@@ -671,6 +809,11 @@ int mprud_poll_cq(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc, int skip_ou
     return 0;
   }
 #endif
+  if (mpctx.wqe_table.wqe[mpctx.wqe_table.head].valid == 0){
+    printf("No more work requests. Stop polling.\n");
+    return 0;
+  }
+
   //************************
   // OUTER POLLING
   //************************
@@ -699,6 +842,7 @@ int mprud_destroy_inner_qps()
         return FAILURE;
     }
   }
+  ibv_destroy_qp(mpctx.mp_manager.report_qp);
   printf("Destoryed inner qps\n");
   return SUCCESS;
 }

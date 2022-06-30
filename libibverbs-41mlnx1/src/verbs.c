@@ -350,12 +350,16 @@ struct ibv_mr *__ibv_exp_reg_mr(struct ibv_exp_reg_mr_in *in)
     printf("MPRUD init_ctx failed.\n");
     return NULL;
   }
-  int len = in->length;
-  // buf = [Original Buf] + [Sub Buf] + [Send Buf] + [Recv Buf]
-  in->length += MPRUD_GRH_SIZE + (MPRUD_DEFAULT_MTU * MPRUD_NUM_PATH) + MPRUD_SEND_BUF_SIZE + MPRUD_RECV_BUF_SIZE;
+#ifdef MG_DEBUG_MODE
+  printf("original buffer size : %d\n", in->length);
+#endif
+  // buf = [Original Buf] + [Sub Buf] + [Last Msg Buf] + [Send Buf] + [Recv Buf]
+  in->length += MPRUD_GRH_SIZE + (MPRUD_GRH_SIZE + MPRUD_DEFAULT_MTU) * (MPRUD_NUM_PATH + 1) + MPRUD_SEND_BUF_SIZE + MPRUD_RECV_BUF_SIZE;
   struct ibv_mr *mr = __ibv_common_reg_mr(in, ctx);
-  mprud_set_outer_buffer(mr->addr, len);
+  mprud_set_outer_buffer(mr->addr, mr->length);
+#ifdef MG_DEBUG_MODE
   printf("buffer size : %d\n", mr->length);
+#endif
   
   return mr;
 #else
