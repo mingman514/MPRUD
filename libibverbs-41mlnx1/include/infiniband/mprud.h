@@ -9,33 +9,68 @@
 
 #define MIN(x,y) (((x) > (y)) ? (y) : (x))
 
+typedef enum res_code {
+  MPRUD_STATUS_NORMAL,
+  MPRUD_STATUS_WAIT,
+  MPRUD_STATUS_WARNING,
+  MPRUD_STATUS_FAIL,  // path failure
+  MPRUD_STATUS_ERROR  // other erros
+}ResCode;
+
+struct qp_set {
+  struct ibv_qp *qp;
+  int idx; // absolute idx matched with real QPs & paths
+};
+
+
+struct report_msg {
+  uint32_t errqps;
+  uint32_t min_wqe; // min wqe among QPs --> Start point
+  uint32_t max_wqe; // max wqe among QPs --> End point
+};
+
 struct path_manager {
   int active_num;
-  int is_active[MPRUD_NUM_PATH];
+  int qps[MPRUD_NUM_PATH];    // qp state
+  struct qp_set *mpqp;    // referencing
   struct ibv_qp *report_qp;
+
   char *send_base_addr;
   char *recv_base_addr;
+  struct qp_status *qp_stat;  // just reference pointer
+
+  int start_time_flag;
+  struct timeval start;
+  struct timeval now;
+  struct timeval focus;
+  struct timeval qp_wait[MPRUD_NUM_PATH];
+  uint64_t prev_qp_cnt[MPRUD_NUM_PATH]; // to check completion done or not for a time unit
 };
 
 struct qp_status {
   struct {
     uint64_t pkt;
+    uint64_t tot_pkt;
     uint64_t ack;
   }posted_scnt;
   struct {
     uint64_t pkt;
+    uint64_t tot_pkt;
     uint64_t ack;
   }posted_rcnt;
   struct {
     uint64_t pkt;
+    uint64_t tot_pkt;
     uint64_t ack;
   }polled_scnt;
   struct {
     uint64_t pkt;
+    uint64_t tot_pkt;
     uint64_t ack;
   }polled_rcnt;
 
-  int wqe_idx;  // currently working wqe idx
+  uint32_t wqe_idx;  // currently working wqe idx
+  int path_id;
 };
 
 struct mprud_wqe {
@@ -51,10 +86,9 @@ struct mprud_wqe {
 struct mprud_context {
   int recv_size;
   int send_size;
-  int split_num;
   int last_size;
   char *outer_buf;
-  struct ibv_qp *inner_qps[MPRUD_NUM_PATH];
+  struct ibv_qp *inner_qps[MPRUD_NUM_PATH]; // array of QPs
   struct ibv_ah *ah_list[MPRUD_NUM_PATH];
   int post_turn;   // Used to count inner recv turn
   int poll_turn;
@@ -71,7 +105,7 @@ struct mprud_context {
     char *send; // send control pkt
     char* recv; // recv control pkt
   }buf;
-  struct qp_status qp_stat[MPRUD_NUM_PATH];
+  struct qp_status qp_stat[MPRUD_NUM_PATH+1];
   uint64_t tot_rposted;
   uint64_t tot_rpolled;
   uint64_t tot_sposted; // only pkt not ack
@@ -81,12 +115,14 @@ struct mprud_context {
 };
 
 extern struct mprud_context mpctx;
+extern struct path_manager mp_manager;
 
 /* Clean this later */
 // post & poll measure
 extern int split_num;  // number of splitted requests
 extern int last_size; 
 
+void mprud_print_qp_status();
 int mprud_init_ctx();
 struct ibv_ah** mprud_get_ah_list();
 void print_gid_info(union ibv_gid mgid);

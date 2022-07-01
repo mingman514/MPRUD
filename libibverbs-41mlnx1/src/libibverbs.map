@@ -87,8 +87,7 @@ IBVERBS_1.0 {
     mprud_print_inner_buffer;
 
     mpctx;
-    split_num;
-    last_size;
+    mp_manager;
 	local: *;
 };
 
@@ -171,6 +170,5 @@ IBVERBS_1.1 {
     mprud_print_buffer;
     
     mpctx;
-    split_num;
-    last_size;
+    mp_manager;
 } IBVERBS_1.0;
