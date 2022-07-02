@@ -2954,7 +2954,8 @@ void print_report_bw (struct perftest_parameters *user_param, struct bw_report_d
 	num_of_calculated_iters *= (user_param->test_type == DURATION) ? 1 : num_of_qps;
 	location_arr = (user_param->noPeak) ? 0 : num_of_calculated_iters - 1;
 	/* support in GBS format */
-	format_factor = (user_param->report_fmt == MBS) ? 0x100000 : 125000000;
+  //format_factor = (user_param->report_fmt == MBS) ? 0x100000 : 125000000;
+	format_factor = (user_param->report_fmt == MBS) ? 0x100000 : 134217728;
 
 	sum_of_test_cycles = ((double)(user_param->tcompleted[location_arr] - user_param->tposted[0]));
 

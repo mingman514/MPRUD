@@ -3682,7 +3682,7 @@ static inline void *ibv_exp_get_provider_func(struct ibv_context *context,
 		if (!context->ops.post_send)
 			goto error;
 
-		return (void *)context->ops.post_send;
+    return (void *)context->ops.post_send;
 
 	case IBV_POLL_CQ_FUNC:
 		if (!context->ops.poll_cq)

@@ -2376,8 +2376,7 @@ int mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
  * ibv_post_send() in perftest directly gets in here.
  * Therefore, skip_mprud has uninitialized value.
  */
-  //if(!skip_mprud)
-  if(skip_mprud != 1) // temp
+  if(!skip_mprud)
     return mprud_post_send(ibqp, wr, bad_wr);
 #else
 int mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,

@@ -176,7 +176,7 @@ static void get_verbs_pointers(struct pingpong_context *ctx)
 		fprintf(stderr, "Couldn't get ibv_exp_post_send pointer\n");
 		ctx->exp_post_send_func_pointer = &ibv_exp_post_send;
 	}
-	ctx->post_send_func_pointer = ibv_exp_get_provider_func(ctx->context,IBV_POST_SEND_FUNC);
+	//ctx->post_send_func_pointer = ibv_exp_get_provider_func(ctx->context,IBV_POST_SEND_FUNC);
 	if (!ctx->post_send_func_pointer) {
 		fprintf(stderr, "Couldn't get ibv_post_send pointer\n");
 		ctx->post_send_func_pointer = &ibv_post_send;
@@ -3670,7 +3670,6 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 	uintptr_t		primary_send_addr = ctx->sge_list[0].addr;
 	int			address_offset = 0;
 	int			flows_burst_iter = 0;
-	
   ALLOCATE(wc ,struct ibv_wc ,CTX_POLL_BATCH);
 
 	if (user_param->test_type == DURATION) {
@@ -3817,9 +3816,15 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
             }*/
 
             
-            
+/*            
+#ifdef USE_MPRUD
+						err = (ctx->post_send_func_pointer)(ctx->qp[index],
+							&ctx->wr[index*user_param->post_list],&bad_wr, 0);
+#else*/
 						err = (ctx->post_send_func_pointer)(ctx->qp[index],
 							&ctx->wr[index*user_param->post_list],&bad_wr);
+//#endif
+
 					}
 					if (err) {
 						fprintf(stderr,"Couldn't post send: qp %d scnt=%lu \n",index,ctx->scnt[index]);

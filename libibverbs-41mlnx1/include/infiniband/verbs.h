@@ -1693,7 +1693,6 @@ static inline int ibv_post_send(struct ibv_qp *qp, struct ibv_send_wr *wr,
 {
 //MPRUD by mingman
 #ifdef USE_MPRUD
-  printf("ibv_post_send\n");
 	return qp->context->ops.post_send(qp, wr, bad_wr, 0);
 #else
 	return qp->context->ops.post_send(qp, wr, bad_wr);

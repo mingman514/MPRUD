@@ -470,8 +470,7 @@ int main(int argc, char *argv[])
 		if (user_param.machine == CLIENT || user_param.duplex)
       // WR setting done (ah, rem_qpn, q_key)
 			ctx_set_send_wqes(&ctx,&user_param,rem_dest);
-
-		if (user_param.machine == SERVER || user_param.duplex) {
+    if (user_param.machine == SERVER || user_param.duplex) {
       // ctx_set_recv_wqes <- post_recv included!
 			if (ctx_set_recv_wqes(&ctx,&user_param)) {
 				fprintf(stderr," Failed to post receive recv_wqes\n");
@@ -481,17 +480,11 @@ int main(int argc, char *argv[])
     // sender problem here
     // because customized [post_recv] in ctx_set_recv_wqes
     // does not let it pass through here due to polling...
-#ifdef USE_MPRUD
+
     if (user_param.machine == CLIENT){
       printf("[MPRUD] Client sleep to sync.\n");
-//      sleep(1);
+      sleep(5);
     }
-#else
-		if (ctx_hand_shake(&user_comm,&my_dest[0],&rem_dest[0])) {
-			fprintf(stderr,"Failed to exchange data between server and clients\n");
-			return FAILURE;
-		}
-#endif
 
 		if (user_param.duplex) {
 
@@ -544,12 +537,17 @@ int main(int argc, char *argv[])
 			}
 		}
 
-
+#ifdef USE_MPRUD
+//    if (user_param.machine == CLIENT){
+//      printf("[MPRUD] Client sleep to sync.\n");
+//      sleep(1);
+//    }
+#else
 		if (ctx_hand_shake(&user_comm,&my_dest[0],&rem_dest[0])) {
 			fprintf(stderr,"Failed to exchange data between server and clients\n");
 			return FAILURE;
 		}
-
+#endif
 		if (user_param.machine == CLIENT) {
 
 			if(run_iter_bw_infinitely(&ctx,&user_param)) {

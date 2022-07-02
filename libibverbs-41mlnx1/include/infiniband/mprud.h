@@ -24,9 +24,10 @@ struct qp_set {
 
 
 struct report_msg {
-  uint32_t errqps;
+  uint32_t errqpn;
   uint32_t min_wqe; // min wqe among QPs --> Start point
   uint32_t max_wqe; // max wqe among QPs --> End point
+//  uint32_t completed;
 };
 
 struct path_manager {
@@ -37,6 +38,8 @@ struct path_manager {
 
   char *send_base_addr;
   char *recv_base_addr;
+  struct report_msg msg;
+
   struct qp_status *qp_stat;  // just reference pointer
 
   int start_time_flag;
@@ -45,6 +48,13 @@ struct path_manager {
   struct timeval focus;
   struct timeval qp_wait[MPRUD_NUM_PATH];
   uint64_t prev_qp_cnt[MPRUD_NUM_PATH]; // to check completion done or not for a time unit
+
+  int monitor_flag;
+
+  // perf
+  int p_start_time_flag;
+  struct timeval p_start;
+  struct timeval p_now;  
 };
 
 struct qp_status {
@@ -67,10 +77,11 @@ struct qp_status {
     uint64_t pkt;
     uint64_t tot_pkt;
     uint64_t ack;
+//    uint64_t previous; // to measure performance
   }polled_rcnt;
 
+  uint64_t recv_msg_size;
   uint32_t wqe_idx;  // currently working wqe idx
-  int path_id;
 };
 
 struct mprud_wqe {
@@ -81,6 +92,9 @@ struct mprud_wqe {
   int iter_each[MPRUD_NUM_PATH];
   int chnk_last;
   int msg_last;
+  int start_idx;
+  int avg_size_per_pkt;
+
 };
 
 struct mprud_context {
@@ -112,6 +126,7 @@ struct mprud_context {
   uint64_t tot_spolled;
 
   struct path_manager mp_manager; 
+  uint64_t app_tot_posted;
 };
 
 extern struct mprud_context mpctx;
