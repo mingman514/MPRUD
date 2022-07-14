@@ -17,23 +17,16 @@ typedef enum res_code {
   MPRUD_STATUS_ERROR  // other erros
 }ResCode;
 
-struct qp_set {
-  struct ibv_qp *qp;
-  int idx; // absolute idx matched with real QPs & paths
-};
-
-
 struct report_msg {
   uint32_t errqpn;
-  uint32_t min_wqe; // min wqe among QPs --> Start point
-  uint32_t max_wqe; // max wqe among QPs --> End point
-//  uint32_t completed;
+  uint32_t max_posted;
+  uint32_t wqe_loss_idx;
+  uint32_t completed;
 };
 
 struct path_manager {
   int active_num;
   int qps[MPRUD_NUM_PATH];    // qp state
-  struct qp_set *mpqp;    // referencing
   struct ibv_qp *report_qp;
 
   char *send_base_addr;
@@ -49,17 +42,27 @@ struct path_manager {
   struct timeval qp_wait[MPRUD_NUM_PATH];
   uint64_t prev_qp_cnt[MPRUD_NUM_PATH]; // to check completion done or not for a time unit
 
+  // recovery
+  int recovery_flag;
+  int got_report_flag;
+  int recovery_max_wqe;
+  int recovery_cur_post_wqe;
+  int recovery_cur_poll_wqe;
+#ifdef MAKE_ONE_FAILURE_ONLY
   int monitor_flag;
+#endif
 
   // perf
   int p_start_time_flag;
   struct timeval p_start;
   struct timeval p_now;  
+
+  struct timeval initial; // base time to measure current time elapsed
 };
 
 struct qp_status {
   struct {
-    uint64_t pkt;
+    uint64_t pkt;   // used when outer polling
     uint64_t tot_pkt;
     uint64_t ack;
   }posted_scnt;
@@ -80,6 +83,9 @@ struct qp_status {
 //    uint64_t previous; // to measure performance
   }polled_rcnt;
 
+  uint64_t recovery_polled_pkt;
+
+  uint64_t recv_temp;   // used when inner polling
   uint64_t recv_msg_size;
   uint32_t wqe_idx;  // currently working wqe idx
 };
@@ -90,8 +96,10 @@ struct mprud_wqe {
   struct ibv_send_wr swr;
   struct ibv_recv_wr rwr;
   int iter_each[MPRUD_NUM_PATH];
+  int comp_need;
+ // int comp_each[MPRUD_NUM_PATH];
   int chnk_last;
-  int msg_last;
+  //int msg_last;
   int start_idx;
   int avg_size_per_pkt;
 
@@ -124,9 +132,11 @@ struct mprud_context {
   uint64_t tot_rpolled;
   uint64_t tot_sposted; // only pkt not ack
   uint64_t tot_spolled;
+  uint64_t tot_recovery_posted;
+  uint64_t tot_recovery_polled;
 
   struct path_manager mp_manager; 
-  uint64_t app_tot_posted;
+ // uint64_t app_tot_posted;
 };
 
 extern struct mprud_context mpctx;

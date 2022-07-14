@@ -17,11 +17,15 @@
   { fprintf(stderr," Cannot Allocate\n"); exit(1);}}
 
 #define USE_MPRUD
-//#define MG_DEBUG_MODE
-#define debugpath
-#define PRINT_PERF_PER_QP
+#define USE_RECOVERY_MODE   // Use recovery mode. If not defined, it will never monitor failure and go for recovery at all.
+#define PRINT_PERF_PER_QP   // Print performance from this mprud
+//#define PERFTEST_PRINT_PERF   // Print performance from Perf Test application
+#define MAKE_ONE_FAILURE_ONLY   // Make one single failure and then stop monitoring. This is for testing on closed environemnt...
 
-//#define SIMULATE_LINK_FAILURE
+//#define MG_DEBUG_MODE
+//#define debugpath
+//#define recovery_log
+
 
 #define MPRUD_NUM_PATH 4
 #define MPRUD_DEFAULT_PORT 1
@@ -37,12 +41,12 @@
 #define MPRUD_RECV_BUF_OFFSET (MPRUD_GRH_SIZE + MPRUD_DEFAULT_MTU)
 
 // Buffer
-#define MPRUD_SEND_BUF_SIZE 12
-#define MPRUD_RECV_BUF_SIZE (12 + MPRUD_GRH_SIZE)
+#define MPRUD_SEND_BUF_SIZE 16
+#define MPRUD_RECV_BUF_SIZE (16 + MPRUD_GRH_SIZE)
 
 #define MPRUD_TABLE_LEN 100000
-#define MPRUD_MONITOR_CYCLE 200    // us
-#define MPRUD_REPORT_RECV_CYCLE 100    // us
+#define MPRUD_MONITOR_CYCLE 30    // us
+#define MPRUD_REPORT_RECV_CYCLE 30    // us
 #define MPRUD_TIMEOUT_THRESHOLD 1000    // us
 #define MPRUD_PRINT_PERF_CYCLE 1000000
 

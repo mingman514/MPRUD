@@ -59,7 +59,7 @@ int mprud_init_ctx()
   for (int i=0; i<MPRUD_NUM_PATH; i++)
     mp_manager.qps[i] = 1;
 
-  mp_manager.qp_stat = mpctx.qp_stat;
+  mp_manager.qp_stat = &mpctx.qp_stat;
   mp_manager.recovery_flag = 0;
   mp_manager.recovery_max_wqe = -1;
   // ....  
@@ -111,7 +111,6 @@ void mprud_perf_per_qp()
   if (!mp_manager.p_start_time_flag){
     mp_manager.p_start_time_flag = 1;
     gettimeofday(&mp_manager.p_start, NULL);
-    gettimeofday(&mp_manager.initial, NULL);
     return ;
   }
 
@@ -119,10 +118,7 @@ void mprud_perf_per_qp()
   float usec = mprud_get_us(mp_manager.p_start, mp_manager.p_now);
   if (usec < MPRUD_PRINT_PERF_CYCLE)
     return ;
-
-  // Print Time Elapsed
-  printf("Time: %.2f ms\n", mprud_get_us(mp_manager.initial, mp_manager.p_now)/1000);
-
+ 
   uint64_t tot_bytes = 0;
   for(int i=0; i<MPRUD_NUM_PATH; i++){
     uint64_t bytes = (double)mpctx.qp_stat[i].recv_msg_size;
@@ -155,6 +151,32 @@ void mprud_perf_per_qp()
       printf("\n----------------------------\n");
 //-------------------------------------------------
 */
+}
+
+void mprud_update_mpqp()
+{
+  printf("-------- UPDATE MPQP ---------\n");
+  printf("Active Num: %d\n", mp_manager.active_num);
+  if (mp_manager.mpqp != NULL)
+    free(mp_manager.mpqp);
+
+  mp_manager.mpqp = (struct qp_set*) malloc(mp_manager.active_num * sizeof(struct qp_set));
+
+  int idx=0;
+  for (int i=0; i<MPRUD_NUM_PATH; i++){
+    if (mp_manager.qps[i] == MPRUD_QPS_ACTIVE){
+      mp_manager.mpqp[idx].qp = mpctx.inner_qps[i];
+      mp_manager.mpqp[idx].idx = i;
+      idx++;
+#ifdef debugpath
+    printf("MPQP #%d (mpqp) --> %d (innerqps)\n", idx, i);
+#endif
+    }
+  }
+
+  if (idx != mp_manager.active_num){
+    printf("ERROR: mp_manager.mpqp should be equal to active num\n");
+  }
 }
 
 int mprud_create_inner_qps(struct ibv_pd *pd, struct ibv_qp_init_attr *qp_init_attr)
@@ -193,6 +215,8 @@ int mprud_create_inner_qps(struct ibv_pd *pd, struct ibv_qp_init_attr *qp_init_a
   iqp_init_attr.qp_type = IBV_QPT_UD;
 
   mp_manager.report_qp = pd->context->ops.create_qp(pd, &iqp_init_attr);
+
+  mprud_update_mpqp();
 
   return SUCCESS;
 }
@@ -386,16 +410,14 @@ void mprud_set_dest_qp_num(uint32_t qp_num)
 
 void mprud_print_qp_status()
 {
-  printf("------------- QP STATE -------------\n");
+  struct path_manager *manager = &mp_manager;
+  printf("------ QP STATE ------\n");
   for (int i=0; i<MPRUD_NUM_PATH; i++){
-    printf("[%02d] active    : %d (QPN %d)\n", i, mp_manager.qps[i], mpctx.inner_qps[i]->qp_num);
-    printf("     send post : %d\n", mpctx.qp_stat[i].posted_scnt.pkt);
-    printf("     recv post : %d\n", mpctx.qp_stat[i].posted_rcnt.pkt);
-    printf("     send comp : %d\n", mpctx.qp_stat[i].polled_scnt.tot_pkt);
-    printf("     recv comp : %d\n", mpctx.qp_stat[i].polled_rcnt.tot_pkt);
-    printf("     wqe index : %d\n", mpctx.qp_stat[i].wqe_idx);
+    printf("[%02d] active    : %d (QPN %d)\n", i, manager->qps[i], mpctx.inner_qps[i]->qp_num);
+    printf("     send post : %d\n", manager->qp_stat->posted_scnt.pkt);
+    printf("     recv post : %d\n", manager->qp_stat->posted_rcnt.pkt);
+    printf("     wqe index : %d\n", manager->qp_stat->wqe_idx);
   }
-  printf("------------------------------------\n");
 }
 
 
@@ -418,7 +440,9 @@ int mprud_post_recv_ack(struct ibv_qp *rep_qp)
   if (rep_qp->context->ops.post_recv(rep_qp, &wr, &bad_wr, 1))
     return FAILURE;
 
-  printf("#%d post recv ack done.\n", mpctx.qp_stat[MPRUD_NUM_PATH].posted_rcnt.ack);
+#ifdef MG_DEBUG_MODE
+  printf("#%d post recv done.\n", mpctx.qp_stat[MPRUD_NUM_PATH].posted_rcnt.ack);
+#endif
 
   return SUCCESS;
 }
@@ -433,11 +457,9 @@ int mprud_post_send_ack(struct ibv_qp *rep_qp)
   memcpy(mp_manager.send_base_addr, &max_posted, sizeof(uint32_t));
   printf("Client max_posted: %d\n", max_posted);
 
-//  int path_num = rand() % (mp_manager.active_num - 1);  // use random path?
-  int path_num = 0;
-  printf("ACK using path #%d\n", path_num);
+  int path_num = rand() % mp_manager.active_num;  // use random path?
   memset(&sg, 0, sizeof(sg));
-  sg.addr   = mp_manager.send_base_addr;
+  sg.addr   = mp_manager.send_base_addr;// + mpctx.post_turn * 4;
   sg.length = sizeof(uint32_t);
   sg.lkey   = mpctx.wqe_table.wqe[mpctx.wqe_table.head].swr.sg_list->lkey;
 
@@ -447,7 +469,7 @@ int mprud_post_send_ack(struct ibv_qp *rep_qp)
   wr.num_sge    = 1;
   wr.opcode     = IBV_WR_SEND;
   wr.send_flags = IBV_SEND_SIGNALED;
-  wr.wr.ud.ah   = mpctx.ah_list[path_num]; // USE Random path 
+  wr.wr.ud.ah   = mpctx.ah_list[mp_manager.mpqp[path_num].idx]; // USE Random path 
   wr.wr.ud.remote_qkey = 0x22222222;
   wr.wr.ud.remote_qpn = mpctx.dest_qp_num + (MPRUD_NUM_PATH + 1);
 
@@ -480,8 +502,8 @@ int mprud_post_recv_report(struct ibv_qp *rep_qp)
   if (rep_qp->context->ops.post_recv(rep_qp, &wr, &bad_wr, 1))
     return FAILURE;
 
-#ifdef debugpath
-  printf("#%d post recv report done.\n", mpctx.qp_stat[MPRUD_NUM_PATH].posted_rcnt.ack);
+#ifdef MG_DEBUG_MODE
+  printf("#%d post recv done.\n", mpctx.qp_stat[MPRUD_NUM_PATH].posted_rcnt.ack);
 #endif
   mpctx.qp_stat[MPRUD_NUM_PATH].posted_rcnt.ack++;
   return SUCCESS;
@@ -520,20 +542,19 @@ ResCode mprud_wait_report_msg()
   //////////////////////////////
   if (mp_manager.recovery_flag){
 
+    // check if post_recv until MAX POSTED done
+    if(mp_manager.recovery_max_wqe != mpctx.wqe_table.next-1){
+      printf("Waiting for more posting until max_posted wqe.(now: %d  until: %d)\n", mpctx.wqe_table.next-1, mp_manager.recovery_max_wqe);
+      return MPRUD_STATUS_WAIT; 
+    }
+
     // client failed QP recovery (split posting)
     if(mprud_recovery_client())
       return MPRUD_STATUS_ERROR;
 
-//    // check if post_recv until MAX POSTED done
-//    if(mp_manager.recovery_cur_post_  mp_manager.recovery_max_wqe){
-//      printf("Waiting for more posting until max_posted wqe.(now: %d  until: %d)\n", mpctx.wqe_table.next-1, mp_manager.recovery_max_wqe);
-//      return MPRUD_STATUS_WAIT; 
-//    }
-
     // when finished recovery
     return MPRUD_STATUS_NORMAL;
   } 
-
 
   //////////////////////////////
   // Polling Msg from Server
@@ -541,11 +562,14 @@ ResCode mprud_wait_report_msg()
   ne = mprud_poll_report(rep_qp->recv_cq, 0); 
   if (ne > 0){
     printf("GOT report msg!\n");
-    mp_manager.recovery_flag = 1;
     // Got report msg!
     mp_manager.qp_stat[MPRUD_NUM_PATH].polled_rcnt.ack += ne;
 
     memcpy(&mp_manager.msg, mp_manager.recv_base_addr + MPRUD_GRH_SIZE, sizeof(struct report_msg));
+
+
+    // New post_recv for report
+    err = mprud_post_recv_report(rep_qp);
 
     // Go to recovery routine
     return MPRUD_STATUS_FAIL;
@@ -566,10 +590,13 @@ int mprud_post_recv_recovery(uint64_t id, struct ibv_recv_wr *wr)
   int i, err;
   uint32_t size = wr->sg_list->length;
   struct ibv_recv_wr *bad_wr;
+//  if(ibqp->qp_type == IBV_QPT_UD)
+//    size -= MPRUD_GRH_SIZE;
 
   /* Only when MPRUD_NUM_PATH less than default MTU */
-  int active_num = mp_manager.active_num - 1; // manually reduce active_num
+  int active_num = mp_manager.active_num;
   uint32_t chunk_size = size / active_num;
+  uint32_t msg_last = size - chunk_size * active_num;
   uint32_t iter_each = (chunk_size / MPRUD_DEFAULT_MTU);
   uint32_t chnk_last = chunk_size % MPRUD_DEFAULT_MTU;
   if (chnk_last)
@@ -578,9 +605,15 @@ int mprud_post_recv_recovery(uint64_t id, struct ibv_recv_wr *wr)
     chnk_last = MPRUD_DEFAULT_MTU;
 
   uint32_t iter = iter_each * active_num;
+  if (msg_last > 0 && msg_last <= MPRUD_DEFAULT_MTU)
+    iter += 1;
 
-  mpctx.wqe_table.wqe[id].comp_need = iter;
+  mprud_store_wr(NULL, wr, iter, iter_each, chnk_last, msg_last, id);
+  
 
+#ifdef MG_DEBUG_MODE
+  printf("chunk_size: %u  msg_last: %u iter_each: %u  iter: %u chnk_last: %u\n", chunk_size, msg_last, iter_each, iter, chnk_last);
+#endif
   uint64_t base_addr[active_num];
   for (int i=0; i<active_num; i++){
     base_addr[i] = wr->sg_list->addr + chunk_size * (i + 1) + MPRUD_GRH_SIZE;
@@ -598,23 +631,46 @@ int mprud_post_recv_recovery(uint64_t id, struct ibv_recv_wr *wr)
   /**
    * Message Splitting
    */
-  int max_outstd = mpctx.recv_size / 2;
+  int max_outstd = 512;
   int msg_length;
   int mem_chnk_num = active_num;
-  for (i = 0; i < iter; i++){ 
-    i %= mem_chnk_num;
+  int m_turn = mpctx.wqe_table.wqe[id].start_idx;
+  for (i = 0; i < iter; i++){
+    tmp_sge.addr = base_addr[m_turn] - (i/mem_chnk_num + 1) * MPRUD_DEFAULT_MTU;
 
-    tmp_sge.addr = base_addr[i] - (i/mem_chnk_num + 1) * MPRUD_DEFAULT_MTU;
+    // LAST MSG NOT EXIST
+    if (!msg_last){
 
-    if (iter - i <= mem_chnk_num){   
+      if (iter - i <= mem_chnk_num){   
 
-      // chunk last msg
-      msg_length = chnk_last;
-      tmp_sge.addr = mpctx.buf.sub + (MPRUD_DEFAULT_MTU + MPRUD_GRH_SIZE) * i;
+        // chunk last msg
+        msg_length = chnk_last;
+        tmp_sge.addr = mpctx.buf.sub + (MPRUD_DEFAULT_MTU + MPRUD_GRH_SIZE) * m_turn;
+      } else {
+
+        msg_length = MPRUD_DEFAULT_MTU;
+
+      }
     } else {
 
-      msg_length = MPRUD_DEFAULT_MTU;
+      // LAST MSG EXIST
+      if (i == iter-1){
 
+        // last msg
+        msg_length = msg_last;
+        tmp_sge.addr = mpctx.buf.last; 
+
+      } else if (iter-i-1 <= mem_chnk_num) {
+
+        // chunk last msg
+        msg_length = chnk_last;
+        tmp_sge.addr = mpctx.buf.sub + (MPRUD_DEFAULT_MTU + MPRUD_GRH_SIZE) * m_turn;
+
+      } else {
+
+        msg_length = MPRUD_DEFAULT_MTU;
+
+      }
     }
 
     tmp_sge.length = msg_length + MPRUD_GRH_SIZE;
@@ -623,23 +679,24 @@ int mprud_post_recv_recovery(uint64_t id, struct ibv_recv_wr *wr)
     tmp_wr.sg_list = &tmp_sge;
 
 
-//    printf("[#%d] addr: %lx   length: %d\n", i, tmp_wr.sg_list->addr, tmp_wr.sg_list->length);
+#ifdef MG_DEBUG_MODE
+    printf("[#%d] addr: %lx   length: %d\n", m_turn, tmp_wr.sg_list->addr, tmp_wr.sg_list->length);
+#endif
 
     // 3. post_recv
-    err = mp_manager.report_qp->context->ops.post_recv(mp_manager.report_qp, &tmp_wr, &bad_wr, 1);  // original post recv
-    mpctx.tot_recovery_posted += 1;
+    err = mpctx.inner_qps[0]->context->ops.post_recv(mp_manager.mpqp[m_turn].qp, &tmp_wr, &bad_wr, 1);  // original post recv
 
+    int q_turn = mp_manager.mpqp[m_turn].idx;
+    mpctx.qp_stat[q_turn].posted_rcnt.pkt += 1;
+    mpctx.tot_rposted += 1;
+    m_turn = (m_turn + 1) % mem_chnk_num;
     if (err){
-      printf("ERROR while splited post_recv_recovery! #%d\n", err);
+      printf("ERROR while splited post_recv! #%d\n", err);
       return err;
     }
     // polling
-#ifdef recovery_log
-    printf("tot recovery posted: %d    tot recovery polled: %d\n", mpctx.tot_recovery_posted, mpctx.tot_recovery_polled);
-#endif
-    while (mpctx.tot_recovery_posted - mpctx.tot_recovery_polled >= max_outstd){
-      if (mprud_recovery_poll(MP_SERVER))
-      //if (mprud_poll_cq(mp_manager.report_qp->recv_cq, MPRUD_POLL_BATCH, wc, 1))  
+    while (mpctx.tot_rposted - mpctx.tot_rpolled >= max_outstd){
+      if (mprud_poll_cq(mpctx.inner_qps[0]->recv_cq, MPRUD_POLL_BATCH, wc, 1))  
         return FAILURE; // last arg 1 => skip outer poll
     }
 
@@ -653,55 +710,47 @@ int mprud_recovery_client()
   // Client Recovery
   //////////////////////////////
 
-  // if recovery done COMPLETION, skip
-  if (mp_manager.recovery_cur_poll_wqe > mp_manager.recovery_max_wqe){
+  // update mpqp
+  mprud_update_mpqp();
 
-    // update flag & time after recovery done
-    mp_manager.recovery_flag = 0;
-    mp_manager.start_time_flag = 0;
-
-    // After recovery, reduce active_num so that next post_send to be scheduled without failed path
-    mp_manager.active_num -= 1;
-
-    printf("################ RECOVERY FINISHED ################\n");
-    return SUCCESS;
-  }
-
-  // if recovery posting done, skip
-  if (mp_manager.recovery_cur_post_wqe > mp_manager.recovery_max_wqe){
-    return SUCCESS;
-  }
-
-#ifdef recovery_log
-  printf("[Recovery] Cur Posted WQE: %d   (until %d)\n", mp_manager.recovery_cur_post_wqe, mp_manager.recovery_max_wqe);
-#endif
-//  mprud_print_qp_status();
+  //--------------> now we can schedule without failed path
+  mprud_print_qp_status();
 
   // splitted post_recv for recovery !
   struct ibv_send_wr *bad_wr;
 
-  int errqpn = mp_manager.msg.errqpn;
+  int errqpn = mp_manager.msg.errqpn; // q_turn base
   int completed = mp_manager.msg.completed;
-  int wqe_idx = mp_manager.recovery_cur_post_wqe;
 
-  struct ibv_send_wr *wqe = &mpctx.wqe_table.wqe[wqe_idx].swr;
+  int wqe_idx = mp_manager.msg.wqe_loss_idx;
+  while (wqe_idx <= mp_manager.recovery_max_wqe){
+    struct ibv_send_wr *wqe = &mpctx.wqe_table.wqe[wqe_idx].swr;
+    // Modify length & address
+    wqe->sg_list->length /= (mp_manager.active_num + 1); 
+    wqe->sg_list->addr += (errqpn * wqe->sg_list->length);
 
-  // Modify length & address
-  wqe->sg_list->length /= (mp_manager.active_num + 1); 
-  wqe->sg_list->addr += (errqpn * wqe->sg_list->length);
+    // First loss wqe
+    if (wqe_idx == mp_manager.msg.wqe_loss_idx){
+      // need to update length
+      wqe->sg_list->length -= (wqe->sg_list->length / mpctx.wqe_table.wqe[wqe_idx].iter_each[errqpn])*completed;
+      //if (msg_last > 0 && errqpn == wqe->start_idx)  // include msg_last
+      /**
+       * Problem! The way I splitted msg is not appropriate for recovery...
+       * Maybe next time I should not handle the last msg separately.
+       * For now, pass due to time constraints.
+       */
+    }
 
-  // First loss wqe
-  if (wqe_idx == mp_manager.msg.wqe_loss_idx){
-    // need to update length
-    wqe->sg_list->length -= (wqe->sg_list->length / mpctx.wqe_table.wqe[wqe_idx].iter_each[errqpn])*completed;
+    int err = mprud_post_send_recovery(wqe_idx, wqe);
+    if (err){
+      printf("Error while post_send_recovery.\n");
+      return FAILURE;
+    }
   }
 
-  int err = mprud_post_send_recovery(wqe_idx, wqe);
-  if (err){
-    printf("Error while post_send_recovery.\n");
-    return FAILURE;
-  }
-  mp_manager.recovery_cur_post_wqe++;
+  // update flag & time after recovery done
+  mp_manager.recovery_flag = 0;
+  gettimeofday(&mp_manager.start, NULL);
 
   return SUCCESS;
 }
@@ -709,86 +758,51 @@ int mprud_recovery_client()
 int mprud_recovery_server()
 {
   //////////////////////////////
-  // POLLING FOR REPORT ACK
+  // Server Recovery
   //////////////////////////////
-  if (!mp_manager.got_report_flag){ 
 
-    int ne = mprud_poll_report(mp_manager.report_qp->recv_cq, 0);
-    if (ne > 0){
+  // update mpqp
+  mprud_update_mpqp();
 
-      printf("GOT ACK msg back! Now go to polling recovery msg.\n");
-      mp_manager.got_report_flag = 1;
+  //--------------> now we can schedule without failed path
+  mprud_print_qp_status();
 
-      uint32_t client_max_posted = *(uint32_t*)(mp_manager.recv_base_addr + MPRUD_GRH_SIZE);
-      if (client_max_posted > mp_manager.msg.max_posted){
-        // use later in poll_cq
-        mp_manager.recovery_max_wqe = client_max_posted;
-      }
-      printf("MAX POSTED : %d ---> %d\n", mpctx.wqe_table.next - 1, client_max_posted);
-    }
-  }
-
-#ifdef recovery_log
-  printf("mp_manager.recovery_cur_poll_wqe: %d   mp_manager.recovery_max_wqe: %d\n", mp_manager.recovery_cur_poll_wqe, mp_manager.recovery_max_wqe);
-#endif
-
-  /////////////////////////////////
-  // RECOVERY DONE COMPLETION
-  /////////////////////////////////
-  if (mp_manager.recovery_cur_poll_wqe > mp_manager.recovery_max_wqe && mp_manager.got_report_flag){
-
-    // update flag & time after recovery done
-    mp_manager.recovery_flag = 0;
-    mp_manager.start_time_flag = 0;
-
-    // After recovery, reduce active_num so that next post_send to be scheduled without failed path
-    mp_manager.active_num -= 1;
-
-    // is this okay? this is just to pretend that failed QP has been flushed, and move on
-    mpctx.tot_rpolled = mpctx.tot_rposted;
-    printf("################ RECOVERY FINISHED ################\n");
-#ifdef MAKE_ONE_FAILURE_ONLY
-    mp_manager.monitor_flag = 1;
-#endif
-    return SUCCESS;
-  }
-
-  // if recovery posting done, skip
-  if (mp_manager.recovery_cur_post_wqe > mp_manager.recovery_max_wqe){
-    return SUCCESS;
-  }
-  
-#ifdef recovery_log
-  printf("[Recovery] Cur Posted WQE: %d   (until %d)\n", mp_manager.recovery_cur_post_wqe, mp_manager.recovery_max_wqe);
-#endif
-//  mprud_print_qp_status();
-
-  /////////////////////////////////
-  // POST RECV RECOVERY
-  /////////////////////////////////
+  // splitted post_recv for recovery !
   struct ibv_recv_wr *bad_wr;
 
-  int errqpn = mp_manager.msg.errqpn;   // --> path 3
+  int errqpn = mp_manager.msg.errqpn; // q_turn base
   int completed = mp_manager.msg.completed;
-  int wqe_idx = mp_manager.recovery_cur_post_wqe;
 
-  struct ibv_recv_wr *wqe = &mpctx.wqe_table.wqe[wqe_idx].rwr;
-  // Modify length & address
-  wqe->sg_list->length /= (mp_manager.active_num + 1); 
-  wqe->sg_list->addr += (errqpn * wqe->sg_list->length);
+  int wqe_idx = mp_manager.msg.wqe_loss_idx;
+  while (wqe_idx <= mp_manager.recovery_max_wqe){
+    struct ibv_recv_wr *wqe = &mpctx.wqe_table.wqe[wqe_idx].rwr;
+    // Modify length & address
+    wqe->sg_list->length /= (mp_manager.active_num + 1); 
+    wqe->sg_list->addr += (errqpn * wqe->sg_list->length);
 
-  // First loss wqe
-  if (wqe_idx == mp_manager.msg.wqe_loss_idx){
-    // need to update length
-    wqe->sg_list->length -= (wqe->sg_list->length / mpctx.wqe_table.wqe[wqe_idx].iter_each[errqpn])*completed;
+    // First loss wqe
+    if (wqe_idx == mp_manager.msg.wqe_loss_idx){
+      // need to update length
+      wqe->sg_list->length -= (wqe->sg_list->length / mpctx.wqe_table.wqe[wqe_idx].iter_each[errqpn])*completed;
+      //if (msg_last > 0 && errqpn == wqe->start_idx)  // include msg_last
+      /**
+       * Problem! The way I splitted msg is not appropriate for recovery...
+       * Maybe next time I should not handle the last msg separately.
+       * For now, pass due to time constraints.
+       */
+    }
+
+    int err = mprud_post_recv_recovery(wqe_idx, wqe);
+    if (err){
+      printf("Error while post_recv_recovery.\n");
+      return FAILURE;
+    }
+    //mprud_post_recv_recovery(wqe_idx, &mpctx.wqe_table.wqe[wqe_idx].rwr);
   }
 
-  int err = mprud_post_recv_recovery(wqe_idx, wqe);
-  if (err){
-    printf("Error while post_recv_recovery.\n");
-    return FAILURE;
-  }
-  mp_manager.recovery_cur_post_wqe++;
+  // update flag & time after recovery done
+  mp_manager.recovery_flag = 0;
+  gettimeofday(&mp_manager.start, NULL);
 
   return SUCCESS;
 }
@@ -827,15 +841,15 @@ ResCode mprud_monitor_path()
   //////////////////////////////
   if (mp_manager.recovery_flag){
 
+    // check if post_recv until MAX POSTED done
+    if(mp_manager.recovery_max_wqe != mpctx.wqe_table.next-1){
+      printf("Waiting for more posting until max_posted wqe.(now: %d  until: %d)\n", mpctx.wqe_table.next-1, mp_manager.recovery_max_wqe);
+      return MPRUD_STATUS_WAIT; 
+    }
+
     // server failed QP recovery (split posting)
     if(mprud_recovery_server())
       return MPRUD_STATUS_ERROR;
-
-//    // check if post_recv until MAX POSTED done
-//    if(mp_manager.recovery_max_wqe != mpctx.wqe_table.next-1){
-//      printf("Waiting for more posting until max_posted wqe.(now: %d  until: %d)\n", mpctx.wqe_table.next-1, mp_manager.recovery_max_wqe);
-//      return MPRUD_STATUS_WAIT; 
-//    }
 
     // when finished recovery
     return MPRUD_STATUS_NORMAL;
@@ -859,9 +873,10 @@ ResCode mprud_monitor_path()
       if (mprud_get_us(manager->qp_wait[i], manager->now) > MPRUD_TIMEOUT_THRESHOLD){
         // Go to Error state
         manager->qps[i] = MPRUD_QPS_ERROR;
-        
+#ifdef debugpath
         printf("QP#%d -- prev:%llu  now:%llu\n",i, manager->prev_qp_cnt[i], manager->qp_stat[i].polled_rcnt.tot_pkt);
         printf("QP#%d -- TIMEOUT! (%.2f > %d)\n", i, mprud_get_us(manager->qp_wait[i], manager->now), MPRUD_TIMEOUT_THRESHOLD);
+#endif
       }
     }
     // update cnts
@@ -884,12 +899,16 @@ ResCode mprud_monitor_path()
 
 int mprud_post_send_recovery(uint64_t id, struct ibv_send_wr *wr)
 {
-  int i, err;
+  struct ibv_recv_wr *bad_wr;
+
   uint32_t size = wr->sg_list->length;
+  int i, ert, ne;
 
   /* Only when MPRUD_NUM_PATH less than default MTU */
-  int active_num = mp_manager.active_num - 1;  // manually reduce active_num
+  //int active_num = mp_manager.active_num;
+  int active_num = MPRUD_NUM_PATH;  // simulate the full-path situation
   uint32_t chunk_size = size / active_num;
+  uint32_t msg_last = size - chunk_size * active_num;
   uint32_t iter_each = (chunk_size / MPRUD_DEFAULT_MTU);
   uint32_t chnk_last = chunk_size % MPRUD_DEFAULT_MTU;
   if (chnk_last)
@@ -897,21 +916,26 @@ int mprud_post_send_recovery(uint64_t id, struct ibv_send_wr *wr)
   else
     chnk_last = MPRUD_DEFAULT_MTU;
 
+  //uint32_t iter = iter_each * MPRUD_NUM_PATH;
   uint32_t iter = iter_each * active_num;
+  if (msg_last > 0 && msg_last <= MPRUD_DEFAULT_MTU)
+    iter += 1;
 
-  mpctx.wqe_table.wqe[id].comp_need = iter;
-#ifdef recovery_log
-  printf("[post_send_recovery] wqe #%d need completion of %d\n", id, iter);
+  mprud_store_wr(wr, NULL, iter_each, chnk_last, msg_last, id);
+#ifdef MG_DEBUG_MODE
+  printf("chunk_size: %u  msg_last: %u iter_each: %u  iter: %u chnk_last: %u\n", chunk_size, msg_last, iter_each, iter, chnk_last);
 #endif
-
-//printf("mp_manager.recovery_cur_post_wqe: %d  mpctx.qp_stat[mp_manager.msg.errqpn].wqe_idx: %d  mpctx.wqe_table.head: %d\n", mp_manager.recovery_cur_post_wqe, mpctx.qp_stat[mp_manager.msg.errqpn].wqe_idx, mpctx.wqe_table.head);
   uint64_t base_addr[active_num];
   for (int i=0; i<active_num; i++){
     base_addr[i] = wr->sg_list->addr + chunk_size * (i + 1);
   }
 
+#ifdef MG_DEBUG_MODE
+  printf("\n----------------------------------------\n");
+  printf("recv_size=%d | send_size=%d for each inner qp\n", mpctx.recv_size, mpctx.send_size);
+#endif
+
   struct ibv_wc wc[MPRUD_POLL_BATCH];
-  struct ibv_send_wr *bad_wr;
 
   /**
    * Work Request Setting
@@ -926,59 +950,91 @@ int mprud_post_send_recovery(uint64_t id, struct ibv_send_wr *wr)
   struct ibv_sge tmp_sge;
   memcpy(&tmp_sge, wr->sg_list, sizeof(struct ibv_sge));
 
+#ifdef MG_DEBUG_MODE
+  printf("tmp_sge.addr: %lx length: %d\nMessage: %s\n",tmp_sge.addr, wr->sg_list->length, (char*)tmp_sge.addr);
+#endif
+
   /**
    * Message Splitting
    */
-  int max_outstd = mpctx.send_size;
+  int max_outstd = 256;
   int msg_length;
   int mem_chnk_num = active_num;
+  int m_turn = mpctx.wqe_table.wqe[id].start_idx;
 
   for (i = 0; i < iter; i++){
-    i %= mem_chnk_num;
+    //int q_turn = mp_manager.mpqp[m_turn].idx;
+    if (mp_manager.msg.errqpn != m_turn){
+      m_turn = (m_turn + 1) % mem_chnk_num;
+      continue;
+    } else if (mp_manager.msg.completed > 0){
+      printf("--- Pass as this(#%d) is already completed pkt.\n", i);
+      mp_manager.msg.completed -= 1;
+      m_turn = (m_turn + 1) % mem_chnk_num;
+      continue;
+    }
 
-    tmp_sge.addr = base_addr[i] - (i/mem_chnk_num + 1) * MPRUD_DEFAULT_MTU;
+    tmp_sge.addr = base_addr[m_turn] - (i/mem_chnk_num + 1) * MPRUD_DEFAULT_MTU;
 
-    if (iter - i <= mem_chnk_num){
+    // LAST MSG NOT EXIST
+    if (!msg_last){
 
-      // last iter
-      msg_length = chnk_last;
-      tmp_sge.addr += MPRUD_DEFAULT_MTU - msg_length;
+      if (iter - i <= mem_chnk_num){
 
+        // last iter
+        msg_length = chnk_last;
+        tmp_sge.addr += MPRUD_DEFAULT_MTU - msg_length;
+
+      } else {
+
+        msg_length = MPRUD_DEFAULT_MTU;
+
+      }
     } else {
 
-      msg_length = MPRUD_DEFAULT_MTU;
+      // LAST MSG EXIST
+      if (i == iter-1){
 
+        msg_length = msg_last;
+        tmp_sge.addr = base_addr[mem_chnk_num-1];
+
+      } else if (iter-i-1 <= mem_chnk_num) {
+
+        // last iter
+        msg_length = chnk_last;
+        tmp_sge.addr += MPRUD_DEFAULT_MTU - msg_length;
+
+      } else {
+        
+        msg_length = MPRUD_DEFAULT_MTU;
+
+      }
     }
 
     tmp_sge.length = msg_length;
     tmp_wr.sg_list = &tmp_sge;
 
     // 4. set ah & remote_qpn
-    tmp_wr.wr.ud.ah = mpctx.ah_list[i]; // USE path in round robin
-    tmp_wr.wr.ud.remote_qpn = mpctx.dest_qp_num + (MPRUD_NUM_PATH + 1);
+    tmp_wr.wr.ud.ah = mpctx.ah_list[mp_manager.mpqp[m_turn].idx]; // USE path in round robin
+    tmp_wr.wr.ud.remote_qpn = mpctx.dest_qp_num + (m_turn + 1);
     tmp_wr.wr.ud.remote_qkey = 0x22222222;
-
 #ifdef MG_DEBUG_MODE
-    printf("RESEND: [#%d] addr: %lx   length: %d\n", i, tmp_wr.sg_list->addr, tmp_wr.sg_list->length);
+    printf("RESEND: [#%d] addr: %lx   length: %d\n", m_turn, tmp_wr.sg_list->addr, tmp_wr.sg_list->length);
 #endif
     // 5. post_send
-    err = mp_manager.report_qp->context->ops.post_send(mp_manager.report_qp, &tmp_wr, &bad_wr, 1); // original post send
-    mpctx.tot_recovery_posted += 1;
+    int err = mp_manager.report_qp->context->ops.post_send(mp_manager.mpqp[m_turn].qp, &tmp_wr, bad_wr, 1); // original post send
 
+    m_turn = (m_turn + 1) % mem_chnk_num;
     if (err){
-      printf("ERROR while splited post_send_recovery!\n");
+      printf("ERROR while splited post_send!\n");
       return err;
     }
-
-#ifdef recovery_log
-    printf("tot recovery posted: %d    tot recovery polled: %d\n", mpctx.tot_recovery_posted, mpctx.tot_recovery_polled);
-#endif
     // polling
-    while (mpctx.tot_recovery_posted - mpctx.tot_recovery_polled >= max_outstd){
-      if (mprud_recovery_poll(MP_CLIENT))
-        return FAILURE;
+    do {
+      ne = mp_manager.report_qp->context->ops.poll_cq(mp_manager.mpqp[m_turn].qp->send_cq, 1, &wc, 1); // Go to original poll_cq
+    } while (ne == 0);
+
     }
-  }
   return SUCCESS;
 }
 
@@ -991,8 +1047,8 @@ int mprud_post_send_report(struct ibv_qp *rep_qp, struct report_msg *msg)
   // copy msg
   memcpy(mp_manager.send_base_addr, msg, sizeof(struct report_msg));
 
-//  int path_num = rand() % (mp_manager.active_num - 1);
-  int path_num = 0;
+  int path_num = rand() % mp_manager.active_num;
+  //int path_num = 0 ;
   memset(&sg, 0, sizeof(sg));
   sg.addr   = mp_manager.send_base_addr;// + mpctx.post_turn * 4;
   sg.length = sizeof(struct report_msg);
@@ -1004,13 +1060,13 @@ int mprud_post_send_report(struct ibv_qp *rep_qp, struct report_msg *msg)
   wr.num_sge    = 1;
   wr.opcode     = IBV_WR_SEND;
   wr.send_flags = IBV_SEND_SIGNALED;
-  wr.wr.ud.ah   = mpctx.ah_list[path_num]; // USE Random path 
+  wr.wr.ud.ah   = mpctx.ah_list[mp_manager.mpqp[path_num].idx]; // USE Random path 
   wr.wr.ud.remote_qkey = 0x22222222;
   wr.wr.ud.remote_qpn = mpctx.dest_qp_num + (MPRUD_NUM_PATH + 1);
 
 #ifdef debugpath
   printf("Report addr: %p  length: %d\n", sg.addr, sg.length);
-  printf("Report data use path_num=%d & remote_qpn=%d\n", path_num, wr.wr.ud.remote_qpn);
+  printf("Report data use path_num=%d & remote_qpn=%d\n",mp_manager.mpqp[path_num].idx, wr.wr.ud.remote_qpn);
 #endif
 
   int err = rep_qp->context->ops.post_send(rep_qp, &wr, &bad_wr, 1);
@@ -1072,7 +1128,6 @@ int mprud_recovery_routine_client()
     printf("wqe_loss_idx: %u\n", mp_manager.msg.wqe_loss_idx);
     printf("max_posted: %u\n", mp_manager.msg.max_posted);
     printf("completed: %u\n", mp_manager.msg.completed);
-    printf("---------------------\n");
 //    printf("comp: %u\n", mp_manager.msg.completed);
 #endif
 
@@ -1080,16 +1135,24 @@ int mprud_recovery_routine_client()
   mprud_post_send_ack(mp_manager.report_qp);
   mprud_poll_report(mp_manager.report_qp->send_cq, 1);
 
+  if (mp_manager.msg.max_posted < mpctx.wqe_table.next - 1)
+    mp_manager.msg.max_posted = mpctx.wqe_table.next - 1;
+  printf("MAX POSTED: %d\n", mp_manager.msg.max_posted);
 
-  mp_manager.recovery_cur_post_wqe = mp_manager.msg.wqe_loss_idx;
-  mp_manager.recovery_cur_poll_wqe = mp_manager.msg.wqe_loss_idx;
-  // Decide Max Posted Number
-  mp_manager.recovery_max_wqe = mpctx.wqe_table.next - 1;
-  if (mp_manager.msg.max_posted > mpctx.wqe_table.next - 1)
-    mp_manager.recovery_max_wqe = mp_manager.msg.max_posted;
+/*
+  // recover by new post_send
+  int wqe_idx = mp_manager.msg.wqe_loss_idx;
+  while (wqe_idx <= mp_manager.msg.max_posted){
+    printf("Recovery! wqe#%d --> start from #%d split msg\n", wqe_idx, mp_manager.msg.completed);
+    mprud_post_send_recovery(wqe_idx, &mpctx.wqe_table.wqe[wqe_idx].swr);
+    wqe_idx++;
+  }
 
-  printf("MAX POSTED: %d\n", mp_manager.recovery_max_wqe);
-
+  // update MPQP
+  mp_manager.active_num -= 1;
+  mp_manager.qps[mp_manager.msg.errqpn] = MPRUD_QPS_DEAD;
+  mprud_update_mpqp();
+*/
 
   return SUCCESS;
 }
@@ -1098,18 +1161,24 @@ int mprud_recovery_routine_server()
 { 
   int err;
 
-mprud_print_qp_status();
   /* 1. Make report msg */
   // Find inactive QPs
   for (int i=0; i<MPRUD_NUM_PATH; i++){
     if (mp_manager.qps[i] == MPRUD_QPS_ERROR){
+
+//------------------------------------------------------------
+//  THIS SHOULD BE UNCOMMENTED AFTER TESTING DONE
+      // change num of active QPs
+      mp_manager.active_num -= 1;
+
+//------------------------------------------------------------
 
       // Now take this error QP as dead QP
       mp_manager.qps[i] = MPRUD_QPS_DEAD;
 
 //      msg.errqpn += (1 << i);
       mp_manager.msg.errqpn = i;
-      break;  // find one failed path only for now
+      break;  // find one failed path only
     }
   }
 
@@ -1120,20 +1189,19 @@ mprud_print_qp_status();
     return FAILURE;
   }
 
-  // prepare report msg
   mp_manager.msg.wqe_loss_idx = mpctx.qp_stat[mp_manager.msg.errqpn].wqe_idx;
   mp_manager.msg.max_posted = mpctx.wqe_table.next - 1;
   if (mp_manager.msg.max_posted < 0)
     mp_manager.msg.max_posted = MPRUD_TABLE_LEN;
-  //mp_manager.msg.completed = mpctx.qp_stat[mp_manager.msg.errqpn].polled_rcnt.pkt;
-  mp_manager.msg.completed = mpctx.qp_stat[mp_manager.msg.errqpn].recv_temp;
+  // need to change
+  mp_manager.msg.completed = mpctx.qp_stat[mp_manager.msg.errqpn].polled_rcnt.pkt;
 
 #ifdef debugpath
   printf("error QPs: %u\n", mp_manager.msg.errqpn);
   printf("loss wqe idx: %u  max post_recv: %u  completed: %u\n", mp_manager.msg.wqe_loss_idx, mp_manager.msg.max_posted, mp_manager.msg.completed);
 #endif
 
-  // transmit msg
+  /* 2. Transmit msg */
   struct ibv_qp *rep_qp = mp_manager.report_qp;
   err = mprud_post_send_report(rep_qp, &mp_manager.msg);
   if (err){
@@ -1147,29 +1215,52 @@ mprud_print_qp_status();
   printf("Server sent report msg!\n");
 
 
+  /* 3. Prepare post_recv for recovery pkts */ 
+  // rescheduling needs to be done automatically when posting WR by active_num
+
   // Post recv for ACK
   mprud_post_recv_ack(rep_qp);  
   printf("Server post_recv for ACK\n");
 
-  mp_manager.recovery_cur_post_wqe = mp_manager.msg.wqe_loss_idx;
-  mp_manager.recovery_cur_poll_wqe = mp_manager.msg.wqe_loss_idx;
-  mp_manager.recovery_max_wqe = mpctx.wqe_table.next - 1;
+  // Get MAX POSTED from client
+  do {
+    ne = mprud_poll_report(mp_manager.report_qp->recv_cq, 0);
+    if (mprud_inner_poll(MP_SERVER))
+      return -1;
+
+  } while (ne == 0);
+  if (ne > 0){
+    printf("GOT ACK msg back! Now go to polling recovery msg.\n");
+
+    mp_manager.recovery_max_wqe = mpctx.wqe_table.next - 1;
+
+    uint32_t client_max_posted = *(uint32_t*)(mp_manager.recv_base_addr + MPRUD_GRH_SIZE);
+    if (client_max_posted > mp_manager.msg.max_posted){
+      // use later in poll_cq
+      mp_manager.recovery_max_wqe = client_max_posted;
+    }
+      printf("MAX POSTED : %d ---> %d\n", mpctx.wqe_table.next - 1, client_max_posted);
+  }
 
   return SUCCESS;
 }
 
-void mprud_store_wr(struct ibv_send_wr *swr, struct ibv_recv_wr *rwr, int iter, int iter_each, int chnk_last)
+void mprud_store_wr(struct ibv_send_wr *swr, struct ibv_recv_wr *rwr, int iter, int iter_each, int chnk_last, int msg_last, int target_wqe)
 {
 
   struct mprud_wqe *wqe;
 
-  wqe = &mpctx.wqe_table.wqe[mpctx.wqe_table.next];
+  if (target_wqe < 0){
+    wqe = &mpctx.wqe_table.wqe[mpctx.wqe_table.next];
 
-  wqe->id = mpctx.wqe_table.sqn;
-  mpctx.wqe_table.sqn += 1;
-  mpctx.wqe_table.next += 1;
-  if (mpctx.wqe_table.next == MPRUD_TABLE_LEN)
-    mpctx.wqe_table.next = 0;
+    wqe->id = mpctx.wqe_table.sqn;
+    mpctx.wqe_table.sqn += 1;
+    mpctx.wqe_table.next += 1;
+    if (mpctx.wqe_table.next == MPRUD_TABLE_LEN)
+      mpctx.wqe_table.next = 0;
+  }
+  else
+    wqe = &mpctx.wqe_table.wqe[target_wqe];
 
   if (swr != NULL){
     memcpy(&wqe->swr, swr, sizeof(struct ibv_send_wr));
@@ -1181,18 +1272,26 @@ void mprud_store_wr(struct ibv_send_wr *swr, struct ibv_recv_wr *rwr, int iter, 
     wqe->rwr.sg_list = (struct ibv_sge*) malloc(sizeof(struct ibv_sge));
     memcpy(wqe->rwr.sg_list, rwr->sg_list, sizeof(struct ibv_sge));
 
-    wqe->avg_size_per_pkt = rwr->sg_list->length / iter;
+    wqe->avg_size_per_pkt = rwr->sg_list->length / (msg_last? iter-1:iter);
     //    printf("Msg per pkt = %d (origin len: %d)\n", wqe->avg_size_per_pkt, rwr->sg_list->length);
   }
 
   wqe->chnk_last = chnk_last;
+  wqe->msg_last = msg_last;
   wqe->valid = 1;
   wqe->start_idx = mpctx.post_turn;
 
   memset(wqe->iter_each, 0, MPRUD_NUM_PATH * sizeof(int));
 
+  int m_turn, q_turn; // m_turn = memory turn, q_turn = qp turn
   for (int i=0; i<mp_manager.active_num; i++){
-    wqe->iter_each[i] = iter_each;
+    m_turn = (mpctx.post_turn + i) % mp_manager.active_num;
+    q_turn = mp_manager.mpqp[m_turn].idx;
+
+    wqe->iter_each[q_turn] = iter_each;
+
+    if (i == 0 && msg_last > 0)
+      wqe->iter_each[q_turn] += 1;
   }
 
 }
@@ -1200,15 +1299,15 @@ void mprud_store_wr(struct ibv_send_wr *swr, struct ibv_recv_wr *rwr, int iter, 
 
 inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct ibv_send_wr **bad_wr)
 {
-  // update turn
-  mpctx.post_turn %= mp_manager.active_num;
-
+  //mpctx.app_tot_posted++;
+  //printf("mprud app_tot_posted: %d\n", mpctx.app_tot_posted);
   uint32_t size = wr->sg_list->length;
   int i, err;
 
   /* Only when MPRUD_NUM_PATH less than default MTU */
   int active_num = mp_manager.active_num;
   uint32_t chunk_size = size / active_num;
+  uint32_t msg_last = size - chunk_size * active_num;
   // always let the last QP handles the left size
   uint32_t iter_each = (chunk_size / MPRUD_DEFAULT_MTU);
   uint32_t chnk_last = chunk_size % MPRUD_DEFAULT_MTU;
@@ -1218,10 +1317,12 @@ inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct i
     chnk_last = MPRUD_DEFAULT_MTU;
 
   uint32_t iter = iter_each * active_num;
+  if (msg_last > 0 && msg_last <= MPRUD_DEFAULT_MTU)
+    iter += 1;
 
-  mprud_store_wr(wr, NULL, iter, iter_each, chnk_last);
+  mprud_store_wr(wr, NULL, iter, iter_each, chnk_last, msg_last, -1);
 #ifdef MG_DEBUG_MODE
-  printf("chunk_size: %u  iter_each: %u  iter: %u chnk_last: %u\n", chunk_size, iter_each, iter, chnk_last);
+  printf("chunk_size: %u  msg_last: %u iter_each: %u  iter: %u chnk_last: %u\n", chunk_size, msg_last, iter_each, iter, chnk_last);
 #endif
   uint64_t base_addr[active_num];
   for (int i=0; i<active_num; i++){
@@ -1259,20 +1360,49 @@ inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct i
   int max_outstd = 256;
   int msg_length;
   int mem_chnk_num = active_num;
-
+  mpctx.post_turn %= active_num;
   for (i = 0; i < iter; i++){
+#ifdef SIMULATE_LINK_FAILURE
+  if (mpctx.post_turn == 0){
+    mpctx.post_turn = (mpctx.post_turn + 1) % mem_chnk_num; 
+    continue;
+  }
+#endif
     tmp_sge.addr = base_addr[mpctx.post_turn] - (i/mem_chnk_num + 1) * MPRUD_DEFAULT_MTU;
 
-    if (iter - i <= mem_chnk_num){
+    // LAST MSG NOT EXIST
+    if (!msg_last){
 
-      // last iter
-      msg_length = chnk_last;
-      tmp_sge.addr += MPRUD_DEFAULT_MTU - msg_length;
+      if (iter - i <= mem_chnk_num){
 
+        // last iter
+        msg_length = chnk_last;
+        tmp_sge.addr += MPRUD_DEFAULT_MTU - msg_length;
+
+      } else {
+
+        msg_length = MPRUD_DEFAULT_MTU;
+
+      }
     } else {
 
-      msg_length = MPRUD_DEFAULT_MTU;
+      // LAST MSG EXIST
+      if (i == iter-1){
 
+        msg_length = msg_last;
+        tmp_sge.addr = base_addr[mem_chnk_num-1];
+
+      } else if (iter-i-1 <= mem_chnk_num) {
+
+        // last iter
+        msg_length = chnk_last;
+        tmp_sge.addr += MPRUD_DEFAULT_MTU - msg_length;
+
+      } else {
+        
+        msg_length = MPRUD_DEFAULT_MTU;
+
+      }
     }
 
     tmp_sge.length = msg_length;
@@ -1283,28 +1413,18 @@ inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct i
     tmp_wr.wr.ud.remote_qpn = mpctx.dest_qp_num + (mpctx.post_turn + 1);
     tmp_wr.wr.ud.remote_qkey = 0x22222222;
 #ifdef MG_DEBUG_MODE
-    printf("[#%d] addr: %lx   length: %d\n", i, tmp_wr.sg_list->addr, tmp_wr.sg_list->length);
-    
-    // check if trying to use Non-Active QP
-    if (mpctx.qp_stat[mpctx.post_turn] != MPRUD_QPS_ACTIVE){
-     printf("[mprud_post_send] Inner QP #%d is not ACTIVE state.\n", mpctx.post_turn);
-     return FAILURE;
-    }
+    printf("[#%d] addr: %lx   length: %d\n", mpctx.post_turn, tmp_wr.sg_list->addr, tmp_wr.sg_list->length);
 #endif
-    // check if trying to use Non-Active QP
-    if (mp_manager.qps[mpctx.post_turn] != MPRUD_QPS_ACTIVE){
-     printf("[mprud_post_send] Inner QP #%d is not ACTIVE state.\n", mpctx.post_turn);
-     return FAILURE;
-    }
     // 5. post_send
-    err = ibqp->context->ops.post_send(mpctx.inner_qps[mpctx.post_turn], &tmp_wr, bad_wr, 1); // original post send
+    err = ibqp->context->ops.post_send(mp_manager.mpqp[mpctx.post_turn].qp, &tmp_wr, bad_wr, 1); // original post send
 
-//printf("post_send turn=%d (WQE#%d)\n", mpctx.post_turn, mpctx.wqe_table.wqe[mpctx.wqe_table.next-1]);
-
-    mpctx.qp_stat[mpctx.post_turn].posted_scnt.pkt += 1;
+    int q_turn = mp_manager.mpqp[mpctx.post_turn].idx;
+    mpctx.qp_stat[q_turn].posted_scnt.pkt += 1;
+    mpctx.qp_stat[q_turn].posted_scnt.tot_pkt += 1;
     mpctx.tot_sposted += 1;
+    mpctx.post_turn = (mpctx.post_turn + 1) % mem_chnk_num;
     if (err){
-      printf("ERROR while splited post_send!  %d\n", err);
+      printf("ERROR while splited post_send!\n");
       return err;
     }
     // polling
@@ -1315,13 +1435,10 @@ inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct i
     printf("\n");
 */
     while (mpctx.tot_sposted - mpctx.tot_spolled >= max_outstd){
-//      printf("<< Go to polling from mprud_post_send\n");
       if (mprud_poll_cq(mpctx.inner_qps[0]->send_cq, MPRUD_POLL_BATCH, wc, 1)) // inner poll & update count included
         return FAILURE; //skip outer poll
-//      printf(">> Got out poll_cq from mprud_post_send\n");
     }
 
-    mpctx.post_turn = (mpctx.post_turn + 1) % mem_chnk_num;
   }
 
   return SUCCESS;
@@ -1329,8 +1446,6 @@ inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct i
 
 inline int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct ibv_recv_wr **bad_wr)
 {
-  // update turn
-  mpctx.post_turn %= mp_manager.active_num;
 
   int i, err;
   uint32_t size = wr->sg_list->length;
@@ -1340,6 +1455,7 @@ inline int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct i
   /* Only when MPRUD_NUM_PATH less than default MTU */
   int active_num = mp_manager.active_num;
   uint32_t chunk_size = size / active_num;
+  uint32_t msg_last = size - chunk_size * active_num;
   uint32_t iter_each = (chunk_size / MPRUD_DEFAULT_MTU);
   uint32_t chnk_last = chunk_size % MPRUD_DEFAULT_MTU;
   if (chnk_last)
@@ -1348,12 +1464,14 @@ inline int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct i
     chnk_last = MPRUD_DEFAULT_MTU;
 
   uint32_t iter = iter_each * active_num;
+  if (msg_last > 0 && msg_last <= MPRUD_DEFAULT_MTU)
+    iter += 1;
 
-  mprud_store_wr(NULL, wr, iter, iter_each, chnk_last);
+  mprud_store_wr(NULL, wr, iter, iter_each, chnk_last, msg_last, -1);
   
 
 #ifdef MG_DEBUG_MODE
-  printf("chunk_size: %u  iter_each: %u  iter: %u chnk_last: %u\n", chunk_size, iter_each, iter, chnk_last);
+  printf("chunk_size: %u  msg_last: %u iter_each: %u  iter: %u chnk_last: %u\n", chunk_size, msg_last, iter_each, iter, chnk_last);
 #endif
   uint64_t base_addr[active_num];
   for (int i=0; i<active_num; i++){
@@ -1376,19 +1494,43 @@ inline int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct i
   int max_outstd = 512;
   int msg_length;
   int mem_chnk_num = active_num;
-
+  mpctx.post_turn %= active_num;
   for (i = 0; i < iter; i++){
     tmp_sge.addr = base_addr[mpctx.post_turn] - (i/mem_chnk_num + 1) * MPRUD_DEFAULT_MTU;
 
-    if (iter - i <= mem_chnk_num){   
+    // LAST MSG NOT EXIST
+    if (!msg_last){
 
-      // chunk last msg
-      msg_length = chnk_last;
-      tmp_sge.addr = mpctx.buf.sub + (MPRUD_DEFAULT_MTU + MPRUD_GRH_SIZE) * mpctx.post_turn;
+      if (iter - i <= mem_chnk_num){   
+
+        // chunk last msg
+        msg_length = chnk_last;
+        tmp_sge.addr = mpctx.buf.sub + (MPRUD_DEFAULT_MTU + MPRUD_GRH_SIZE) * mpctx.post_turn;
+      } else {
+
+        msg_length = MPRUD_DEFAULT_MTU;
+
+      }
     } else {
 
-      msg_length = MPRUD_DEFAULT_MTU;
+      // LAST MSG EXIST
+      if (i == iter-1){
 
+        // last msg
+        msg_length = msg_last;
+        tmp_sge.addr = mpctx.buf.last; 
+
+      } else if (iter-i-1 <= mem_chnk_num) {
+
+        // chunk last msg
+        msg_length = chnk_last;
+        tmp_sge.addr = mpctx.buf.sub + (MPRUD_DEFAULT_MTU + MPRUD_GRH_SIZE) * mpctx.post_turn;
+
+      } else {
+
+        msg_length = MPRUD_DEFAULT_MTU;
+
+      }
     }
 
     tmp_sge.length = msg_length + MPRUD_GRH_SIZE;
@@ -1398,21 +1540,16 @@ inline int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct i
 
 
 #ifdef MG_DEBUG_MODE
-    printf("[#%d] addr: %lx   length: %d\n", i, tmp_wr.sg_list->addr, tmp_wr.sg_list->length);
-
-    // check if trying to use Non-Active QP
-    if (mp_manager.qps[mpctx.post_turn] != MPRUD_QPS_ACTIVE){
-     printf("[mprud_post_recv] Inner QP #%d is not ACTIVE state.\n", mpctx.post_turn);
-     return FAILURE;
-    }
+    printf("[#%d] addr: %lx   length: %d\n", mpctx.post_turn, tmp_wr.sg_list->addr, tmp_wr.sg_list->length);
 #endif
 
     // 3. post_recv
-    err = ibqp->context->ops.post_recv(mpctx.inner_qps[mpctx.post_turn], &tmp_wr, bad_wr, 1);  // original post recv
+    err = ibqp->context->ops.post_recv(mp_manager.mpqp[mpctx.post_turn].qp, &tmp_wr, bad_wr, 1);  // original post recv
 
+    int q_turn = mp_manager.mpqp[mpctx.post_turn].idx;
+    mpctx.qp_stat[q_turn].posted_rcnt.pkt += 1;
     mpctx.tot_rposted += 1;
-    mpctx.qp_stat[mpctx.post_turn].posted_rcnt.pkt += 1;
-
+    mpctx.post_turn = (mpctx.post_turn + 1) % mem_chnk_num;
     if (err){
       printf("ERROR while splited post_recv! #%d\n", err);
       return err;
@@ -1423,7 +1560,6 @@ inline int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct i
         return FAILURE; // last arg 1 => skip outer poll
     }
 
-    mpctx.post_turn = (mpctx.post_turn + 1) % mem_chnk_num;
   }
   return SUCCESS;
 
@@ -1431,17 +1567,16 @@ inline int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct i
 
 static inline uint32_t mprud_get_outer_poll(int Iam)
 {
-//  printf("Got in get_outer_poll\n");
   struct mprud_wqe *wqe = &mpctx.wqe_table.wqe[mpctx.wqe_table.head];
   int comp_flag = 1;
   int active_num = mp_manager.active_num;
-  //int active_num = MPRUD_NUM_PATH;
   
+  int q_turn;
   if (Iam == MP_SERVER){
     for (int i=0; i<active_num; i++){
-      if (mpctx.qp_stat[i].polled_rcnt.pkt < wqe->iter_each[i]){
+      q_turn = mp_manager.mpqp[i].idx;
+      if (mpctx.qp_stat[q_turn].polled_rcnt.pkt < wqe->iter_each[q_turn]){
         comp_flag = 0;
-        printf("Need completion on #%d QP, wqe: %d (now: %d --> need: %d)\n",i, mpctx.wqe_table.head, mpctx.qp_stat[i].polled_rcnt.pkt, wqe->iter_each[i]);
         break;
       }
     }
@@ -1449,15 +1584,17 @@ static inline uint32_t mprud_get_outer_poll(int Iam)
     // update polled cnt
     if (comp_flag){
       for (int i=0; i<active_num; i++){
-        mpctx.qp_stat[i].polled_rcnt.pkt -= wqe->iter_each[i];
+        q_turn = mp_manager.mpqp[i].idx;
+        mpctx.qp_stat[q_turn].polled_rcnt.pkt -= wqe->iter_each[q_turn];
       }
     }
   } else {
 
     for (int i=0; i<active_num; i++){
-      if (mpctx.qp_stat[i].polled_scnt.pkt < wqe->iter_each[i]){
+      q_turn = mp_manager.mpqp[i].idx;
+
+      if (mpctx.qp_stat[q_turn].polled_scnt.pkt < wqe->iter_each[q_turn]){
         comp_flag = 0;
-        printf("Need completion on #%d QP, wqe: %d (now: %d --> need: %d)\n",i, mpctx.wqe_table.head, mpctx.qp_stat[i].polled_scnt.pkt, wqe->iter_each[i]);
         break;
       }
     }
@@ -1466,7 +1603,9 @@ static inline uint32_t mprud_get_outer_poll(int Iam)
     if (comp_flag){
 
       for (int i=0; i<active_num; i++){
-        mpctx.qp_stat[i].polled_scnt.pkt -= wqe->iter_each[i];
+        q_turn = mp_manager.mpqp[i].idx;
+
+        mpctx.qp_stat[q_turn].polled_scnt.pkt -= wqe->iter_each[q_turn];
       }
 /*
       printf("POSTED\n");
@@ -1535,19 +1674,17 @@ int mprud_inner_poll(int Iam)
 
   int active_num = mp_manager.active_num;
   int poll_turn = mpctx.poll_turn % active_num;
-  struct qp_status *qp_stat = &mpctx.qp_stat[poll_turn];
+  int q_turn = mp_manager.mpqp[poll_turn].idx;
+  struct qp_status *qp_stat = &mpctx.qp_stat[q_turn];
 
   uint64_t *tot_posted, *tot_polled;
 
   tot_posted = (Iam == MP_SERVER ? &mpctx.tot_rposted : &mpctx.tot_sposted);
   tot_polled = (Iam == MP_SERVER ? &mpctx.tot_rpolled : &mpctx.tot_spolled);
 
-//if(Iam == MP_CLIENT)
-//  printf("Try Inner Poll   turn=%d\n", poll_turn);
-
   if (*tot_posted - *tot_polled > 0){
 
-    struct ibv_cq *cq = (Iam == MP_SERVER ? mpctx.inner_qps[poll_turn]->recv_cq : mpctx.inner_qps[poll_turn]->send_cq);
+    struct ibv_cq *cq = (Iam == MP_SERVER ? mp_manager.mpqp[poll_turn].qp->recv_cq : mp_manager.mpqp[poll_turn].qp->send_cq);
 #ifdef USE_MPRUD
     uint32_t now_polled = cq->context->ops.poll_cq(cq, batch, tmp_wc, 1); // Go to original poll_cq
 #else
@@ -1576,7 +1713,7 @@ int mprud_inner_poll(int Iam)
       *tot_polled += now_polled;
 
       // if this turn is to use sub buffer
-      if (Iam == MP_SERVER && qp_stat->recv_temp == mpctx.wqe_table.wqe[qp_stat->wqe_idx].iter_each[poll_turn]){
+      if (Iam == MP_SERVER && qp_stat->recv_temp == mpctx.wqe_table.wqe[qp_stat->wqe_idx].iter_each[q_turn]){
 #ifdef MG_DEBUG_MODE
         // printf("Data in sub buffer: %s\n", mpctx.buf.sub + poll_turn * (MPRUD_GRH_SIZE + MPRUD_DEFAULT_MTU) + MPRUD_GRH_SIZE);
 #endif
@@ -1588,6 +1725,9 @@ int mprud_inner_poll(int Iam)
 
         addr += (length / active_num) * poll_turn;
         memcpy(addr, mpctx.buf.recv + MPRUD_GRH_SIZE + (MPRUD_GRH_SIZE + MPRUD_DEFAULT_MTU) * poll_turn, wqe->chnk_last);
+        if (wqe->msg_last > 0 && wqe->start_idx == poll_turn){
+          memcpy(addr + (length/active_num), mpctx.buf.last + MPRUD_GRH_SIZE, wqe->msg_last);
+        } 
 
         qp_stat->recv_temp = 0;
         qp_stat->wqe_idx += 1;
@@ -1597,7 +1737,7 @@ int mprud_inner_poll(int Iam)
 
       for (int i = 0; i < now_polled; i++) {
         if (tmp_wc[i].status != IBV_WC_SUCCESS) {
-          printf("[MPRUD] Poll send CQ error status=%u qp %d\n", tmp_wc[i].status,(int)tmp_wc[i].wr_id);
+          fprintf(stderr, "[MPRUD] Poll send CQ error status=%u qp %d\n", tmp_wc[i].status,(int)tmp_wc[i].wr_id);
         }
       }
     } else if (now_polled < 0){
@@ -1609,149 +1749,23 @@ int mprud_inner_poll(int Iam)
   return SUCCESS;
 }
 
-int mprud_recovery_poll(int Iam)
-{
-  int batch = 1;  // Try polling one WR for each inner qp
-
-  struct ibv_wc tmp_wc[batch];
-  memset(tmp_wc, 0, sizeof(struct ibv_wc) * batch);
-
-  if (mpctx.tot_recovery_posted - mpctx.tot_recovery_polled > 0){
-
-    struct ibv_cq *cq = (Iam == MP_SERVER ? mp_manager.report_qp->recv_cq : mp_manager.report_qp->send_cq);
-    uint32_t now_polled = cq->context->ops.poll_cq(cq, batch, tmp_wc, 1); // Go to original poll_cq
-
-    if (now_polled > 0){
-
-      uint64_t *recovery_polled = &mpctx.qp_stat[MPRUD_NUM_PATH].recovery_polled_pkt;
-
-      *recovery_polled += now_polled; 
-      mpctx.tot_recovery_polled += now_polled;
-
-
-      int errqpn = mp_manager.msg.errqpn;
-      int cur_wqe = mp_manager.recovery_cur_poll_wqe;
-      int comp_need = mpctx.wqe_table.wqe[cur_wqe].comp_need;
-#ifdef recovery_log
-      printf("[Recovery Poll] %d (total: %d)\n", now_polled, mpctx.tot_recovery_polled);
-      printf("[Recovery] Cur Polled WQE: %d\n", cur_wqe);
-
-      printf("current recovery_polled: %d    comp_need: %d\n", *recovery_polled, comp_need);
-#endif
-      while (*recovery_polled >= comp_need){
-        *recovery_polled -= comp_need;       
-        mp_manager.recovery_cur_poll_wqe++;
-
-        if (Iam == MP_SERVER){
-          mpctx.wqe_table.wqe[cur_wqe].iter_each[errqpn] = 0;
-          
-          // Add recovery pkt throughput to each active QP
-          for (int i=0; i<mp_manager.active_num-1; i++){
-            mpctx.qp_stat[i].recv_msg_size += mpctx.wqe_table.wqe[cur_wqe].avg_size_per_pkt / (mp_manager.active_num - 1);
-          }
-        }
-        /* Client side does not need outer poll again. */
-      }
-
-      for (int i = 0; i < now_polled; i++) {
-        if (tmp_wc[i].status != IBV_WC_SUCCESS) {
-          fprintf(stderr, "[MPRUD] Poll send CQ error status=%u qp %d\n", tmp_wc[i].status,(int)tmp_wc[i].wr_id);
-        }
-      }
-    }
-  }
-
-  return SUCCESS;
-}
-
-
 int mprud_poll_cq_server(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc, int skip_outer_poll)
 {
   int Iam = MP_SERVER;
 
+  //***********************
+  // NORMAL MODE
+  //***********************
+  if (!mp_manager.recovery_flag){
 #ifdef USE_RECOVERY_MODE
-  while(1){
     ResCode code;
     int err;
-#ifdef MAKE_ONE_FAILURE_ONLY
-    code = MPRUD_STATUS_NORMAL; // tmp
-    if (!mp_manager.monitor_flag)  // tmp
-#endif
+
     code = mprud_monitor_path();
-    
-    switch (code){
-      case MPRUD_STATUS_NORMAL:
-
-      case MPRUD_STATUS_WAIT:
-        // not reached monitoring period
-        break;
-      case MPRUD_STATUS_WARNING:
-      case MPRUD_STATUS_ERROR:
-        printf("Error Occured in SERVER.\n");
-        return -1;
-
-      case MPRUD_STATUS_FAIL: 
-
-        printf("Path failure detected. Start recovery routine.\n");
-
-        err = mprud_recovery_routine_server();
-        if(err){
-          printf("Failed to recover path.\n");
-          return -1;
-        }
-        break;
-
-    };
-#endif
-
-#ifdef PRINT_PERF_PER_QP
-    mprud_perf_per_qp();
-#endif
-
-
-    // OUTER POLLING
-    if (!skip_outer_poll){
-      int outer_poll_num = mprud_outer_poll(ne, wc, Iam); 
-      if (outer_poll_num){
-        return outer_poll_num;
-      }
-    }
-
-    // INNER POLLING
-    if (mprud_inner_poll(Iam)){
-      return -1;
-    }
-
-#ifdef USE_RECOVERY_MODE
-    // Recovery Polling
-    if (mp_manager.recovery_flag){
-      if (mprud_recovery_poll(Iam))
-        return -1;
-    }
-
-    // when post_recv left until max
-    //if (!mp_manager.recovery_flag || mp_manager.recovery_max_wqe > mpctx.wqe_table.next - 1)
-    if (!mp_manager.recovery_flag){
-      break;
-    }
-
-  }
-#endif
-  return 0;
-}
-
-int mprud_poll_cq_client(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc, int skip_outer_poll)
-{
-  int Iam = MP_CLIENT;
-#ifdef USE_RECOVERY_MODE
-  while(1){
-
-    ResCode code;
-    int err;
-    code = mprud_wait_report_msg();
 
     switch (code){
       case MPRUD_STATUS_NORMAL:
+
       case MPRUD_STATUS_WAIT:
         // not reached monitoring period
         break;
@@ -1764,8 +1778,7 @@ int mprud_poll_cq_client(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc, int 
 #ifdef debugpath
         printf("Path failure detected. Start recovery routine.\n");
 #endif
-
-        err = mprud_recovery_routine_client();
+        err = mprud_recovery_routine_server();
         if(err){
           printf("Failed to recover path.\n");
           return -1;
@@ -1773,40 +1786,134 @@ int mprud_poll_cq_client(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc, int 
         break;
 
     };
+
 #endif
 
+#ifdef PRINT_PERF_PER_QP
+    mprud_perf_per_qp();
+#endif
 
-    //************************
     // OUTER POLLING
-    //************************
     if (!skip_outer_poll){
       int outer_poll_num = mprud_outer_poll(ne, wc, Iam); 
       if (outer_poll_num){
-//printf("Outer poll: %d\n", outer_poll_num);
         return outer_poll_num;
       }
     }
 
-    //************************
     // INNER POLLING
-    //************************
     if (mprud_inner_poll(Iam))
       return -1;
+  }
 
 
+  //***********************
+  // RECOVERY MODE
+  //***********************
+  else {
+
+    while (mp_manager.recovery_flag){   // ----> Use loop not to proceed posting
 #ifdef USE_RECOVERY_MODE
-    // Recovery Polling
-    if (mp_manager.recovery_flag){
-      if (mprud_recovery_poll(Iam))
-        return -1;
-    }
+      ResCode code;
+      int err;
 
-    // when post_recv left until max
-    if (!mp_manager.recovery_flag){
-      break;
+      code = mprud_monitor_path();
+
+      switch (code){
+        case MPRUD_STATUS_NORMAL:
+        case MPRUD_STATUS_WAIT:
+          // not reached monitoring period
+          break;
+        case MPRUD_STATUS_WARNING:
+        case MPRUD_STATUS_ERROR:
+          printf("Error Occured in CLIENT.\n");
+          return -1;
+
+        case MPRUD_STATUS_FAIL: 
+#ifdef debugpath
+          printf("Path failure detected. Start recovery routine.\n");
+#endif
+          err = mprud_recovery_routine_server();
+          if(err){
+            printf("Failed to recover path.\n");
+            return -1;
+          }
+          break;
+
+      };
+
+#endif
+
+#ifdef PRINT_PERF_PER_QP
+      mprud_perf_per_qp();
+#endif
+
+      // INNER POLLING
+      if (mprud_inner_poll(Iam))
+        return -1;
+
+      // when post_recv left until max
+      if (mp_manager.recovery_max_wqe > mpctx.wqe_table.next - 1)
+        break;
     }
   }
+  return 0;
+}
+
+int mprud_poll_cq_client(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc, int skip_outer_poll)
+{
+  int Iam = MP_CLIENT;
+#ifdef USE_RECOVERY_MODE
+  ResCode code;
+  int err;
+
+  code = mprud_wait_report_msg();
+
+  switch (code){
+    case MPRUD_STATUS_NORMAL:
+    case MPRUD_STATUS_WAIT:
+      // not reached monitoring period
+      break;
+    case MPRUD_STATUS_WARNING:
+    case MPRUD_STATUS_ERROR:
+      printf("Error Occured in CLIENT.\n");
+      return -1;
+
+    case MPRUD_STATUS_FAIL: 
+#ifdef debugpath
+      printf("Path failure detected. Start recovery routine.\n");
 #endif
+
+      err = mprud_recovery_routine_client();
+      if(err){
+        printf("Failed to recover path.\n");
+        return -1;
+      }
+      break;
+
+  };
+#endif
+
+  //************************
+  // OUTER POLLING
+  //************************
+  if (!skip_outer_poll){
+    int outer_poll_num = mprud_outer_poll(ne, wc, Iam); 
+    if (outer_poll_num){
+      //      printf("mpctx.app.tot_polled = %lu\n", mpctx.app_tot_posted);
+      return outer_poll_num;
+    }
+  }
+
+  //************************
+  // INNER POLLING
+  //************************
+  if (mprud_inner_poll(Iam))
+    return -1;
+
+  //************************
+  // PATH MANAGE
+  //************************
 
   return 0;
 }
@@ -1834,6 +1941,65 @@ int mprud_poll_cq(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc, int skip_ou
     printf("head: %d   next: %d\n", mpctx.wqe_table.head, mpctx.wqe_table.next);
     return 0;
   }
+/*
+#ifdef USE_RECOVERY_MODE
+  ResCode code;
+  int err;
+
+  if (Iam == MP_SERVER)
+    code = mprud_monitor_path();
+  else if (Iam == MP_CLIENT)
+    code = mprud_wait_report_msg();
+
+
+  switch (code){
+    case MPRUD_STATUS_NORMAL:
+
+    case MPRUD_STATUS_WAIT:
+      // not reached monitoring period
+      break;
+    case MPRUD_STATUS_WARNING:
+    case MPRUD_STATUS_ERROR:
+      printf("Error Occured in CLIENT.\n");
+      return -1;
+
+    case MPRUD_STATUS_FAIL: 
+#ifdef debugpath
+      printf("Path failure detected. Start recovery routine.\n");
+#endif
+
+      if (Iam == MP_SERVER){
+        err = mprud_recovery_routine_server();
+      } else if (Iam == MP_CLIENT){
+        err = mprud_recovery_routine_client();
+      }
+      if(err){
+        printf("Failed to recover path.\n");
+        return -1;
+      }
+      break;
+
+  };
+
+#endif
+
+#ifdef PRINT_PERF_PER_QP
+  if(Iam == MP_SERVER)
+    mprud_perf_per_qp();
+#endif
+  if (!skip_outer_poll){
+    int outer_poll_num = mprud_outer_poll(ne, wc, Iam); 
+    if (outer_poll_num){
+      //      printf("mpctx.app.tot_polled = %lu\n", mpctx.app_tot_posted);
+      return outer_poll_num;
+    }
+  }
+
+  if (mprud_inner_poll(Iam))
+    return -1;
+
+  return 0;
+*/
 }
 
 int mprud_destroy_inner_qps()
