@@ -1263,19 +1263,6 @@ void mprud_store_wr(struct ibv_send_wr *swr, struct ibv_recv_wr *rwr, int iter, 
   for (int i=0; i<mp_manager.active_num; i++){
     wqe->iter_each[i] = iter_each;
   }
-
-  /*
-#ifdef INTEND_PATH_FAILURE
-    if (mp_manager.path_fail_flag){
-      //printf("Change WQE #%d iter_each %d ---> 0\n", mpctx.wqe_table.next-1, wqe->iter_each[FAILURE_PATH]);
-      //wqe->iter_each[FAILURE_PATH] = 0;
-      
-      mpctx.qp_stat[FAILURE_PATH].polled_scnt.pkt += wqe->iter_each[FAILURE_PATH];
-      mpctx.tot_sposted += iter_each;
-      mpctx.tot_spolled += iter_each;    
-    }
-#endif
-*/
 }
 
 
@@ -1401,15 +1388,9 @@ inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct i
 #ifdef INTEND_PATH_FAILURE
     // Just change WR to be loopback msg and let others be the same...
     if (mp_manager.path_fail_flag && mpctx.post_turn == FAILURE_PATH){
-      printf("post_turn: %d  --- USE LOOPBACK\n", mpctx.post_turn);
+      // maybe other properties (ex. remote qpn) do not matter?
       tmp_wr.wr.ud.ah = mpctx.ah_list[MPRUD_NUM_PATH];
-      
     }
-/*    if (mp_manager.path_fail_flag && mpctx.post_turn == FAILURE_PATH){
-      mpctx.post_turn = (mpctx.post_turn + 1) % mem_chnk_num;
-     // printf("SKIP post_send path %d (i=%d)\n", mpctx.post_turn, i);
-      continue;
-    }*/ 
 #endif
 
     // 5. post_send

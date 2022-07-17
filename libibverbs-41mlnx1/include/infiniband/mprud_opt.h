@@ -24,13 +24,16 @@
 //#define PERFTEST_PRINT_PERF   // Print performance from Perf Test application
 #define MAKE_ONE_FAILURE_ONLY   // Make one single failure and then stop monitoring. This is for testing on closed environemnt...
 
+#define MPRUD_NUM_PATH 4
+#define MPRUD_DEFAULT_PORT 1
+
 // Make Self Path Failure
 #define INTEND_PATH_FAILURE
 
 #ifdef INTEND_PATH_FAILURE
   //#define FAILURE_TIME_ELAPSED 0  // us
   #define FAILURE_TIME_ELAPSED 2000000  // us
-  #define FAILURE_PATH 3
+  #define FAILURE_PATH (MPRUD_NUM_PATH-1)
   #define FAILURE_LOSS_RATE 1 // %
 #endif
 
@@ -39,8 +42,6 @@
 //#define recovery_log
 
 
-#define MPRUD_NUM_PATH 4
-#define MPRUD_DEFAULT_PORT 1
 /**
  * MPRUD_BUF_SPLIT_NUM must be larger than max send/recv
  * queue size (send_size, recv_size). Otherwise, the buffer
