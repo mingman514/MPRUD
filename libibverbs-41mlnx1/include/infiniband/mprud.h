@@ -134,6 +134,7 @@ struct mprud_context {
   uint64_t tot_spolled;
   uint64_t tot_recovery_posted;
   uint64_t tot_recovery_polled;
+  int recov_post_turn;
 
   struct path_manager mp_manager; 
  // uint64_t app_tot_posted;
@@ -144,8 +145,8 @@ extern struct path_manager mp_manager;
 
 /* Clean this later */
 // post & poll measure
-extern int split_num;  // number of splitted requests
-extern int last_size; 
+//extern int split_num;  // number of splitted requests
+//extern int last_size; 
 
 void mprud_print_qp_status();
 int mprud_init_ctx();

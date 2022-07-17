@@ -10,4 +10,8 @@ sudo ip addr add 10.0.201.2/24 dev enp1s0f1.201
 sudo ip addr add 10.0.201.3/24 dev enp1s0f1.201
 sudo ip addr add 10.0.201.4/24 dev enp1s0f1.201
 sudo ip addr add 10.0.201.5/24 dev enp1s0f1.201
+sudo ip addr add 10.0.201.6/24 dev enp1s0f1.201
+sudo ip addr add 10.0.201.7/24 dev enp1s0f1.201
+sudo ip addr add 10.0.201.8/24 dev enp1s0f1.201
+sudo ip addr add 10.0.201.9/24 dev enp1s0f1.201
 sudo ip route add 10.0.0.0/16 via 10.0.201.1

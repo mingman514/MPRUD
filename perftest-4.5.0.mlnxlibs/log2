@@ -1,0 +1,38 @@
+Goes here! 1
+REMOTE_GIDS len = 4  |  Number of Path to use = 4
+SUBNET: 00:00:00:00:00:00:00:00
+GUID  : 00:00:255:255:10:00:101:03
+SUBNET: 00:00:00:00:00:00:00:00
+GUID  : 00:00:255:255:10:00:101:04
+SUBNET: 00:00:00:00:00:00:00:00
+GUID  : 00:00:255:255:10:00:101:05
+SUBNET: 00:00:00:00:00:00:00:00
+GUID  : 00:00:255:255:10:00:101:02
+MPRUD created ah_list.
+---------------------------------------------------------------------------------------
+                    Send BW Test
+ Dual-port       : OFF		Device         : mlx5_1
+ Number of qps   : 1		Transport type : IB
+ Connection type : RC		Using SRQ      : OFF
+ TX depth        : 128
+ CQ Moderation   : 1
+ Mtu             : 4096[B]
+ Link type       : Ethernet
+ GID index       : 5
+ Max inline data : 0[B]
+ rdma_cm QPs	 : OFF
+ Data ex. method : Ethernet
+---------------------------------------------------------------------------------------
+[DEBUG] USE element->lid
+ local address: LID 0000 QPN 0x0b5c PSN 0xb6766
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:00:201:02
+write_keys
+ethernet_read keys
+[DEBUG] USE element->lid
+ remote address: LID 0000 QPN 0x0a4c PSN 0x569095
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:00:101:02
+write_keys
+ethernet_read keys
+---------------------------------------------------------------------------------------
+ #bytes     #iterations    BW peak[Gb/sec]    BW average[Gb/sec]   MsgRate[Mpps]
+ 16384      1491483          0.00               36.41  		   0.298294

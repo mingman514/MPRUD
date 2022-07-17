@@ -1546,20 +1546,59 @@ static inline int valid_roce_udp_sport(uint16_t sport)
 
 static inline uint16_t calc_roce_udp_sport(uint32_t qpn, uint32_t rqpn)
 {
+#ifdef USE_HASH_SRC_IP
+  // mingman: can be different number but be cautious of switch configuration
+  return 55558;
+#else
+
+  #ifdef USE_HASH_SRC_PORT
+  
+  // change ah to change path. with each ah, different rqpn.
+  int base_port = 55558;
+//  printf("return: %d\n",base_port + (rqpn - mpctx.dest_qp_num - 1));
+  int turn = rqpn - mpctx.dest_qp_num - 1;
+
+  // Based on y201 --> y101 data transmission
+  switch (turn){
+    case 0:
+      return 55563; // spine 1
+
+    case 1:
+      return 55562; // spine 2
+
+    case 2:
+      return 55558; // spine 3
+
+    case 3:
+      return 55559; // spine 4
+  }; 
+  printf("Unexpected Remote QPN. Use base port #%d\n", base_port);
+  return base_port;
+  
+  #else
 	uint16_t fqpn = folded_qp((qpn & 0xffffff));
 	uint16_t frqpn = folded_qp((rqpn & 0xffffff));
 
 	return (fqpn ^ frqpn) | 0xC000;
+  #endif
+
+#endif
 }
 
 static inline void __mlx5_update_udp_sport(struct mlx5_qp *mqp,
 					   struct mlx5_ah *ah,
 					   uint32_t rqpn)
 {
+#ifdef USE_HASH_SRC_PORT
+  if ((mqp->link_layer == IBV_LINK_LAYER_ETHERNET))
+    ah->av.base.rlid =
+      htons(calc_roce_udp_sport(mqp->verbs_qp.qp.qp_num, rqpn));
+#else
 	if ((mqp->link_layer == IBV_LINK_LAYER_ETHERNET) &&
 	    !valid_roce_udp_sport(htons(ah->av.base.rlid)))
 		ah->av.base.rlid =
 			htons(calc_roce_udp_sport(mqp->verbs_qp.qp.qp_num, rqpn));
+#endif
 }
 
 static int __mlx5_post_send_one_uc_ud(struct ibv_exp_send_wr *wr,
@@ -1643,6 +1682,7 @@ static int __mlx5_post_send_one_uc_ud(struct ibv_exp_send_wr *wr,
 		break;
 
 	case IBV_QPT_UD:
+    // mingman: Maybe I should use WR as this is delivered from app
 		__mlx5_update_udp_sport(qp, to_mah(wr->wr.ud.ah), wr->wr.ud.remote_qpn);
 		tmp = set_datagram_seg(seg, wr);
 		seg  += tmp;
@@ -2224,6 +2264,7 @@ static inline int __mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *
 
 
 
+    // mingman : actual post_send func
 		err = qp->gen_data.post_send_one(wr, qp, exp_send_flags, seg, &size);
 		if (unlikely(err)) {
 			errno = err;

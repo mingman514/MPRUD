@@ -25,6 +25,42 @@
 #include <config.h>
 #endif
 
+// mingman perf
+#ifdef PERFTEST_PRINT_PERF
+static int start_flag;
+struct timeval start, end, initial;
+uint64_t  bytes;
+
+static inline float mprud_get_us(struct timeval start, struct timeval end)
+{
+  return (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec);
+}
+void print_perf(int ne, uint64_t size)
+{
+  bytes += ne * size;
+
+  if (!start_flag){
+     start_flag = 1;
+     gettimeofday(&start, NULL);
+     gettimeofday(&initial, NULL);
+  }
+
+  gettimeofday(&end, NULL);
+  float usec = mprud_get_us(start, end);
+  if (usec < 10000)
+    return ;
+
+  printf("%.2f\t%.2f\n", mprud_get_us(initial, end)/1000, (bytes/(double)(1000*1000*1000/8))/(usec/(1000*1000)));
+//  printf("Time: %.2f ms\n", mprud_get_us(initial, end)/1000);
+
+//  printf("  ==> Total: %lld B   Avg BW: %.2f Gb/s\n\n",bytes, (bytes/(double)(1000*1000*1000/8))/(usec/(1000*1000)));
+
+  // update time
+  gettimeofday(&start, NULL);
+  bytes = 0;
+}
+#endif
+
 #ifdef HAVE_VERBS_EXP
 static enum ibv_exp_wr_opcode exp_opcode_verbs_array[] = {IBV_EXP_WR_SEND,IBV_EXP_WR_RDMA_WRITE,IBV_EXP_WR_RDMA_READ};
 static enum ibv_exp_wr_opcode exp_opcode_atomic_array[] = {IBV_EXP_WR_ATOMIC_CMP_AND_SWP,IBV_EXP_WR_ATOMIC_FETCH_AND_ADD};
@@ -1442,7 +1478,6 @@ struct ibv_exp_res_domain* create_res_domain(struct pingpong_context *ctx, struc
  ******************************************************************************/
 int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *user_param, int qp_index)
 {
-	int i;
 	int flags = IBV_ACCESS_LOCAL_WRITE;
 
 	#ifdef HAVE_VERBS_EXP
@@ -4063,7 +4098,6 @@ int run_iter_bw_server(struct pingpong_context *ctx, struct perftest_parameters 
 				goto cleaning;
 			}
 		}
-
 		do {
 			if (user_param->test_type == DURATION && user_param->state == END_STATE)
 				break;
@@ -4130,7 +4164,6 @@ int run_iter_bw_server(struct pingpong_context *ctx, struct perftest_parameters 
 								}
 
 							} else {
-                //printf("iter_bw_server post_recv\n");
 								if (ibv_post_recv(ctx->qp[wc_id],&ctx->rwr[wc_id],&bad_wr_recv)) {
 									fprintf(stderr, "Couldn't post recv Qp=%d rcnt=%ld\n",wc_id,rcnt_for_qp[wc_id]);
 									return_value = 15;
@@ -4359,7 +4392,11 @@ int run_iter_bw_infinitely(struct pingpong_context *ctx,struct perftest_paramete
 		}
 		if (totccnt < totscnt) {
 			ne = ibv_poll_cq(ctx->send_cq,CTX_POLL_BATCH,wc);
-
+//          printf("After ibv_poll_cq|  totccnt: %d    totscnt: %d\n", totccnt, totscnt);
+      //mingman
+#ifdef PERFTEST_PRINT_PERF
+      print_perf(ne, user_param->size);
+#endif
 			if (ne > 0) {
 
 				for (i = 0; i < ne; i++) {
@@ -4416,9 +4453,14 @@ int run_iter_bw_infinitely_server(struct pingpong_context *ctx, struct perftest_
 
 	while (1) {
 
-		ne = ibv_poll_cq(ctx->recv_cq,CTX_POLL_BATCH,wc);
+    ne = ibv_poll_cq(ctx->recv_cq,CTX_POLL_BATCH,wc);
 
-		if (ne > 0) {
+    //mingman
+#ifdef PERFTEST_PRINT_PERF
+    print_perf(ne, user_param->size);
+#endif
+
+    if (ne > 0) {
 
 			for (i = 0; i < ne; i++) {
 
@@ -4438,7 +4480,7 @@ int run_iter_bw_infinitely_server(struct pingpong_context *ctx, struct perftest_
 
 				} else {
 
-					if (ibv_post_recv(ctx->qp[wc[i].wr_id],&ctx->rwr[wc[i].wr_id],&bad_wr_recv)) {
+          if (ibv_post_recv(ctx->qp[wc[i].wr_id],&ctx->rwr[wc[i].wr_id],&bad_wr_recv)) {
 						fprintf(stderr, "Couldn't post recv Qp=%d\n",(int)wc[i].wr_id);
 						return_value = 15;
 						goto cleaning;

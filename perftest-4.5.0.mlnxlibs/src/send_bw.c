@@ -477,14 +477,18 @@ int main(int argc, char *argv[])
 				return FAILURE;
 			}
 		}
-    // sender problem here
-    // because customized [post_recv] in ctx_set_recv_wqes
-    // does not let it pass through here due to polling...
 
-    if (user_param.machine == CLIENT){
-      printf("[MPRUD] Client sleep to sync.\n");
-      sleep(5);
-    }
+#ifdef USE_MPRUD
+//    if (user_param.machine == CLIENT){
+//      printf("[MPRUD] Client sleep to sync.\n");
+//      sleep(1);
+//    }
+#else
+		if (ctx_hand_shake(&user_comm,&my_dest[0],&rem_dest[0])) {
+			fprintf(stderr,"Failed to exchange data between server and clients\n");
+			return FAILURE;
+		}
+#endif
 
 		if (user_param.duplex) {
 
