@@ -58,6 +58,12 @@ struct path_manager {
   struct timeval p_now;  
 
   struct timeval initial; // base time to measure current time elapsed
+
+  // Make path failure
+  int path_fail_flag;
+  int f_start_time_flag;
+  struct timeval f_start;
+  struct timeval f_now; 
 };
 
 struct qp_status {
@@ -111,7 +117,7 @@ struct mprud_context {
   int last_size;
   char *outer_buf;
   struct ibv_qp *inner_qps[MPRUD_NUM_PATH]; // array of QPs
-  struct ibv_ah *ah_list[MPRUD_NUM_PATH];
+  struct ibv_ah *ah_list[MPRUD_NUM_PATH + 1];
   int post_turn;   // Used to count inner recv turn
   int poll_turn;
   uint32_t dest_qp_num;

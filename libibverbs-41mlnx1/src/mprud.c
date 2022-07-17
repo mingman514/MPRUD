@@ -364,7 +364,39 @@ int mprud_create_ah_list(struct ibv_pd *pd,
       return FAILURE;
     }
   }
+
+#ifdef INTEND_PATH_FAILURE
+  // Create AH for loopback
+
+  int gid_index = 5;
+  // Get my gid
+  union ibv_gid my_gid;
+  if (ibv_query_gid(pd->context, MPRUD_DEFAULT_PORT, gid_index, &my_gid))
+    return FAILURE;
+
+  // ah_attr setting
+  memset(&ah_attr, 0, sizeof(struct ibv_ah_attr));
+
+  ah_attr.port_num = 1;
+  ah_attr.is_global = 1;
+  ah_attr.sl = 3;  // service level 3
+  // GRH
+  ah_attr.grh.dgid = my_gid;
+  ah_attr.grh.sgid_index = gid_index;  // differs 
+  ah_attr.grh.hop_limit = 0xFF;  // default value(64) in perftest
+  ah_attr.grh.traffic_class = 106;
+
+  // create ah_attrs for static paths
+  mpctx.ah_list[MPRUD_NUM_PATH] = ibv_create_ah(pd, &ah_attr);
+  if (!&ah_attr){
+    printf("Unable to create address handler for LOOPBACK!\n");
+    return FAILURE;
+  }
+
+#endif
+
   printf("MPRUD created ah_list.\n");
+
   return SUCCESS;
 }
 
@@ -1232,6 +1264,18 @@ void mprud_store_wr(struct ibv_send_wr *swr, struct ibv_recv_wr *rwr, int iter, 
     wqe->iter_each[i] = iter_each;
   }
 
+  /*
+#ifdef INTEND_PATH_FAILURE
+    if (mp_manager.path_fail_flag){
+      //printf("Change WQE #%d iter_each %d ---> 0\n", mpctx.wqe_table.next-1, wqe->iter_each[FAILURE_PATH]);
+      //wqe->iter_each[FAILURE_PATH] = 0;
+      
+      mpctx.qp_stat[FAILURE_PATH].polled_scnt.pkt += wqe->iter_each[FAILURE_PATH];
+      mpctx.tot_sposted += iter_each;
+      mpctx.tot_spolled += iter_each;    
+    }
+#endif
+*/
 }
 
 
@@ -1242,6 +1286,23 @@ inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct i
 
   uint32_t size = wr->sg_list->length;
   int i, err;
+
+#ifdef INTEND_PATH_FAILURE
+  // before making path fail
+  if (!mp_manager.path_fail_flag){
+    // get initial time first
+    if (!mp_manager.f_start_time_flag){
+      mp_manager.f_start_time_flag = 1;
+      gettimeofday(&mp_manager.f_start, NULL);
+    }
+
+    // check time if it is time to start path failure
+    gettimeofday(&mp_manager.f_now, NULL);
+    if (mprud_get_us(mp_manager.f_start, mp_manager.f_now) > FAILURE_TIME_ELAPSED){
+      mp_manager.path_fail_flag = 1;
+    }
+  }
+#endif
 
   /* Only when MPRUD_NUM_PATH less than default MTU */
   int active_num = mp_manager.active_num;
@@ -1290,6 +1351,7 @@ inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct i
   printf("tmp_sge.addr: %lx length: %d\nMessage: %s\n", tmp_sge.addr, wr->sg_list->length, (char*)tmp_sge.addr);
 #endif
 
+
   /**
    * Message Splitting
    */
@@ -1298,6 +1360,7 @@ inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct i
   int mem_chnk_num = active_num;
 
   for (i = 0; i < iter; i++){
+
     tmp_sge.addr = base_addr[mpctx.post_turn] - (i/mem_chnk_num + 1) * MPRUD_DEFAULT_MTU;
 
     if (iter - i <= mem_chnk_num){
@@ -1333,6 +1396,20 @@ inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct i
      printf("[mprud_post_send] Inner QP #%d is not ACTIVE state.\n", mpctx.post_turn);
      return FAILURE;
     }
+#endif
+
+#ifdef INTEND_PATH_FAILURE
+    // Just change WR to be loopback msg and let others be the same...
+    if (mp_manager.path_fail_flag && mpctx.post_turn == FAILURE_PATH){
+      printf("post_turn: %d  --- USE LOOPBACK\n", mpctx.post_turn);
+      tmp_wr.wr.ud.ah = mpctx.ah_list[MPRUD_NUM_PATH];
+      
+    }
+/*    if (mp_manager.path_fail_flag && mpctx.post_turn == FAILURE_PATH){
+      mpctx.post_turn = (mpctx.post_turn + 1) % mem_chnk_num;
+     // printf("SKIP post_send path %d (i=%d)\n", mpctx.post_turn, i);
+      continue;
+    }*/ 
 #endif
 
     // 5. post_send
