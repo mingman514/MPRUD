@@ -91,9 +91,12 @@ struct qp_status {
 
   uint64_t recovery_polled_pkt;
 
-  uint64_t recv_temp;   // used when inner polling
+  uint64_t comp_temp;   // used when inner polling
   uint64_t recv_msg_size;
   uint32_t wqe_idx;  // currently working wqe idx
+
+  // manage queue size
+  int qlen;
 };
 
 struct mprud_wqe {
@@ -141,9 +144,12 @@ struct mprud_context {
   uint64_t tot_recovery_posted;
   uint64_t tot_recovery_polled;
   int recov_post_turn;
+  int recov_poll_turn;
 
   struct path_manager mp_manager; 
  // uint64_t app_tot_posted;
+ // tmp
+ struct timeval tmp;
 };
 
 extern struct mprud_context mpctx;

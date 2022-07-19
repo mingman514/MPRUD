@@ -285,7 +285,6 @@ static int create_ah_from_wc_recv(struct pingpong_context *ctx,
 static int ethernet_write_keys(struct pingpong_dest *my_dest,
 		struct perftest_comm *comm)
 {
-  printf("write_keys\n");
 	if (my_dest->gid_index == -1) {
 
 		char msg[KEY_MSG_SIZE];
@@ -332,7 +331,6 @@ static int ethernet_write_keys(struct pingpong_dest *my_dest,
 static int ethernet_read_keys(struct pingpong_dest *rem_dest,
 		struct perftest_comm *comm)
 {
-  printf("ethernet_read keys\n");
 	if (rem_dest->gid_index == -1) {
 
 		int parsed;
