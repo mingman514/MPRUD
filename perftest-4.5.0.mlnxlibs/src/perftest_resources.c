@@ -4461,7 +4461,6 @@ int run_iter_bw_infinitely_server(struct pingpong_context *ctx, struct perftest_
 #endif
 
     if (ne > 0) {
-
 			for (i = 0; i < ne; i++) {
 
 				if (wc[i].status != IBV_WC_SUCCESS) {

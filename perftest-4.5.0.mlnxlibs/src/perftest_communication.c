@@ -1583,10 +1583,6 @@ void ctx_print_pingpong_data(struct pingpong_dest *element,
 	int is_there_mgid,local_mgid,remote_mgid;
 
 	/* use dlid value from user (if user specified and only on the remote side) */
-  if(comm->rdma_params->dlid && comm->rdma_params->side)
-    printf("[DEBUG] USE comm->rdma_params->dlid\n");
-  else
-    printf("[DEBUG] USE element->lid\n");
 	uint16_t dlid = (comm->rdma_params->dlid && comm->rdma_params->side) ?
 				comm->rdma_params->dlid : element->lid;
 

@@ -463,7 +463,9 @@ int mprud_post_recv_ack(struct ibv_qp *rep_qp, int Iam)
   if (rep_qp->context->ops.post_recv(rep_qp, &wr, &bad_wr, 1))
     return FAILURE;
 
+#ifdef recovery_log 
   printf("#%d post recv ack done.\n", mpctx.qp_stat[MPRUD_NUM_PATH].posted_rcnt.ack);
+#endif
 
   return SUCCESS;
 }
@@ -476,11 +478,15 @@ int mprud_post_send_ack(struct ibv_qp *rep_qp, int Iam)
 
   uint32_t max_posted = mpctx.wqe_table.next-1;
   memcpy(mp_manager.send_base_addr, &max_posted, sizeof(uint32_t));
+#ifdef recovery_log 
   printf("Client max_posted: %d\n", max_posted);
+#endif
 
 //  int path_num = rand() % (mp_manager.active_num - 1);  // use random path?
   int path_num = 0;
+#ifdef recovery_log 
   printf("ACK using path #%d\n", path_num);
+#endif
   memset(&sg, 0, sizeof(sg));
   sg.addr   = mp_manager.send_base_addr;
   sg.length = sizeof(uint32_t);
@@ -589,7 +595,9 @@ ResCode mprud_wait_report_msg()
   ne = mprud_poll_report(rep_qp->recv_cq, 0); 
   if (ne > 0){
 
+#ifdef recovery_log 
     printf("GOT report msg!\n");
+#endif
     mp_manager.recovery_flag = 1;
 
     // Got report msg!
@@ -610,8 +618,10 @@ ResCode mprud_wait_report_msg()
         //printf("QP #%d : %d left\n", i, mpctx.qp_stat[i].qlen);
       }
       //printf("-----------------------\n");
+#ifdef recovery_log 
       if (!sum)
         printf("ALL inner QPs are empty now.\n");
+#endif
     } while (sum > 0);
 
     // Go to recovery routine
@@ -734,14 +744,18 @@ int mprud_recovery_client()
     mp_manager.active_num -= 1;
 
     mpctx.tot_rpolled = mpctx.tot_rposted;
+#ifdef recovery_log 
     printf("################ RECOVERY FINISHED ################\n");
     printf("WQE head: %d   WQE cur: %d \n", mpctx.wqe_table.head, mpctx.wqe_table.next - 1);
     mprud_print_qp_status();
+#endif
 
     // Wait for Server
     mprud_post_recv_ack(mp_manager.report_qp, MP_CLIENT);
     mprud_poll_report(mp_manager.report_qp->recv_cq, 1); 
+#ifdef recovery_log 
     printf("SERVER-CLIENT SYNC DONE\n");
+#endif
 
     return SUCCESS;
   }
@@ -773,7 +787,6 @@ int mprud_recovery_client()
 
   // First loss wqe
   if (wqe_idx == mp_manager.msg.wqe_loss_idx){
-    printf("wqe->sg_list->length: %d, mpctx.wqe_table.wqe[wqe_idx].iter_each[errqpn]:%d   completed: %d\n", wqe->sg_list->length, mpctx.wqe_table.wqe[wqe_idx].iter_each[errqpn],completed);
     // need to update length
     wqe->sg_list->length -= (wqe->sg_list->length / mpctx.wqe_table.wqe[wqe_idx].iter_each[errqpn])*completed;
   }
@@ -797,17 +810,23 @@ int mprud_recovery_server()
 
     int ne = mprud_poll_report(mp_manager.report_qp->recv_cq, 0);
     if (ne > 0){
-
+#ifdef recovery_log 
       printf("GOT ACK msg back! Now go to polling recovery msg.\n");
+#endif
       mp_manager.got_report_flag = 1;
 
       uint32_t client_max_posted = *(uint32_t*)(mp_manager.recv_base_addr + MPRUD_GRH_SIZE);
       if (client_max_posted > mp_manager.msg.max_posted){
+#ifdef recovery_log 
         printf("MAX POSTED : %d ---> %d (client posted more)\n", mpctx.wqe_table.next - 1, client_max_posted);
+#endif
         // use later in poll_cq
         mp_manager.recovery_max_wqe = client_max_posted;
-      } else
+      }
+#ifdef recovery_log 
+      else
         printf("MAX POSTED : %d (server posted more)\n", mpctx.wqe_table.next - 1);
+#endif
 
       // XXX : when Client side posted more than server, Server side must post more post_recv at this moment to update WQE table.
       // but for simplicity, just copy the previous table element since all wqes are the same in Perftest App.
@@ -842,9 +861,12 @@ int mprud_recovery_server()
 
     // is this okay? this is just to pretend that failed QP has been flushed, and move on
     mpctx.tot_rpolled = mpctx.tot_rposted;
+#ifdef recovery_log 
     printf("################ RECOVERY FINISHED ################\n");
     printf("WQE head: %d   WQE cur: %d \n", mpctx.wqe_table.head, mpctx.wqe_table.next - 1);
     mprud_print_qp_status();
+#endif
+
 #ifdef MAKE_ONE_FAILURE_ONLY
     mp_manager.monitor_flag = 1;
 #endif
@@ -853,7 +875,9 @@ int mprud_recovery_server()
     // Notice client that server is done
     mprud_post_send_ack(mp_manager.report_qp, MP_SERVER);
     mprud_poll_report(mp_manager.report_qp->send_cq, 1);
+#ifdef recovery_log 
     printf("SERVER-CLIENT SYNC DONE\n");
+#endif
 
     return SUCCESS;
   }
@@ -971,9 +995,10 @@ ResCode mprud_monitor_path()
       if (mprud_get_us(manager->qp_wait[i], manager->now) > MPRUD_TIMEOUT_THRESHOLD){
         // Go to Error state
         manager->qps[i] = MPRUD_QPS_ERROR;
-        
+#ifdef recovery_log 
         printf("QP#%d -- prev:%llu  now:%llu\n",i, manager->prev_qp_cnt[i], manager->qp_stat[i].polled_rcnt.tot_pkt);
         printf("QP#%d -- TIMEOUT! (%.2f > %d)\n", i, mprud_get_us(manager->qp_wait[i], manager->now), MPRUD_TIMEOUT_THRESHOLD);
+#endif
       }
     }
     // update cnts
@@ -1047,7 +1072,6 @@ int mprud_post_send_recovery(uint64_t id, struct ibv_send_wr *wr)
   mpctx.recov_post_turn %= active_num;
 
   for (i = 0; i < iter; i++){
-//    i %= mem_chnk_num;
 
     tmp_sge.addr = base_addr[mpctx.recov_post_turn] - (i/mem_chnk_num + 1) * MPRUD_DEFAULT_MTU;
 
@@ -1178,6 +1202,7 @@ int mprud_poll_report(struct ibv_cq *cq, int is_blocking)
  */
 int mprud_recovery_routine_client()
 {
+#ifdef recovery_log 
   mprud_print_qp_status();
 
   printf("<<<Report Message>>>\n");
@@ -1186,6 +1211,7 @@ int mprud_recovery_routine_client()
   printf("max_posted: %u\n", mp_manager.msg.max_posted);
   printf("completed: %u\n", mp_manager.msg.completed);
   printf("---------------------\n");
+#endif
 
   // ACK to Server
   mprud_post_send_ack(mp_manager.report_qp, MP_CLIENT);
@@ -1199,10 +1225,15 @@ int mprud_recovery_routine_client()
   // Decide Max Posted Number
   mp_manager.recovery_max_wqe = mpctx.wqe_table.next - 1;
   if (mp_manager.msg.max_posted > mpctx.wqe_table.next - 1){
+#ifdef recovery_log 
     printf("MAX POSTED: %d  --->   %d (server posted more)\n", mp_manager.recovery_max_wqe, mp_manager.msg.max_posted);
+#endif
     mp_manager.recovery_max_wqe = mp_manager.msg.max_posted;
-  } else
+  }
+#ifdef recovery_log 
+  else
     printf("MAX POSTED: %d (client posted more)\n", mp_manager.recovery_max_wqe);
+#endif
 
 
   return SUCCESS;
@@ -1226,11 +1257,15 @@ int mprud_recovery_routine_server()
       //printf("QP #%d : %d left\n", i, mpctx.qp_stat[i].qlen);
     }
     //printf("-----------------------\n");
+#ifdef recovery_log 
     if (!sum)
       printf("ALL inner QPs are empty now.\n");
+#endif
   } while (sum > 0);
 
+#ifdef recovery_log 
   mprud_print_qp_status();
+#endif
   /* 1. Make report msg */
   // Find inactive QPs
   for (int i=0; i<MPRUD_NUM_PATH; i++){
@@ -1260,6 +1295,7 @@ int mprud_recovery_routine_server()
   //mp_manager.msg.completed = mpctx.qp_stat[mp_manager.msg.errqpn].polled_rcnt.pkt;
   mp_manager.msg.completed = mpctx.qp_stat[mp_manager.msg.errqpn].comp_temp;
 
+#ifdef recovery_log 
   // Print Report Msg
   printf("<<<Report Message>>>\n");
   printf("errqpn: %u\n", mp_manager.msg.errqpn);
@@ -1267,7 +1303,7 @@ int mprud_recovery_routine_server()
   printf("max_posted: %u\n", mp_manager.msg.max_posted);
   printf("completed: %u\n", mp_manager.msg.completed);
   printf("---------------------\n");
-
+#endif
   // transmit msg
   struct ibv_qp *rep_qp = mp_manager.report_qp;
   err = mprud_post_send_report(rep_qp, &mp_manager.msg);
@@ -1279,12 +1315,16 @@ int mprud_recovery_routine_server()
   // Send WR completion
   int ne = mprud_poll_report(rep_qp->send_cq, 1); 
   mp_manager.qp_stat[MPRUD_NUM_PATH].polled_scnt.ack += ne;
+#ifdef recovery_log 
   printf("Server sent report msg!\n");
+#endif
 
 
   // Post recv for ACK
   mprud_post_recv_ack(rep_qp, MP_SERVER);  
+#ifdef recovery_log 
   printf("Server post_recv for ACK\n");
+#endif
 
   mp_manager.recovery_cur_post_wqe = mp_manager.msg.wqe_loss_idx;
   mp_manager.recovery_cur_poll_wqe = mp_manager.msg.wqe_loss_idx;
@@ -1334,6 +1374,23 @@ void mprud_store_wr(struct ibv_send_wr *swr, struct ibv_recv_wr *rwr, int iter, 
 
 inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct ibv_send_wr **bad_wr)
 {
+#ifdef NO_SPLIT_SMALL_MSG
+
+  wr->wr.ud.ah = mpctx.ah_list[mpctx.post_turn];
+  wr->wr.ud.remote_qpn = mpctx.dest_qp_num + 1;
+  wr->wr.ud.remote_qkey = 0x22222222;
+
+  int err = ibqp->context->ops.post_send(mpctx.inner_qps[0], wr, bad_wr, 1); // original post send
+  if (err){
+    printf("ERROR while splited post_send!  %d\n", err);
+    return err;
+  }
+  mpctx.tot_sposted += 1;
+  mpctx.post_turn = (mpctx.post_turn + 1) % mp_manager.active_num;
+
+  return SUCCESS;
+
+#else
   // update turn
   mpctx.post_turn %= mp_manager.active_num;
 
@@ -1415,9 +1472,10 @@ inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct i
   for (i = 0; i < iter; i++){
 
   if (active_num != mp_manager.active_num){
+#ifdef recovery_log 
     printf("ACTIVE_NUM changed! There must be recovery session.\n");
+#endif
     mpctx.post_turn = 0;  // important! must sync post_turn so that MPRUD on both sides can use the SAME QP.
-    //sleep(2);
     return SUCCESS;
   }
 
@@ -1485,10 +1543,26 @@ inline int mprud_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr, struct i
   }
 
   return SUCCESS;
+#endif
 }
 
 inline int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct ibv_recv_wr **bad_wr)
 {
+#ifdef NO_SPLIT_SMALL_MSG
+  
+  wr->sg_list->length += MPRUD_GRH_SIZE;
+
+  int err = ibqp->context->ops.post_recv(mpctx.inner_qps[0], wr, bad_wr, 1);  // original post recv
+  if (err){
+    printf("ERROR while post_recv! #%d\n", err);
+    return err;
+  }
+  mpctx.tot_rposted += 1;
+  mpctx.post_turn = (mpctx.post_turn + 1) % mp_manager.active_num;
+
+  return SUCCESS;
+
+#else
   // update turn
   mpctx.post_turn %= mp_manager.active_num;
 
@@ -1540,7 +1614,9 @@ inline int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct i
   for (i = 0; i < iter; i++){
 
     if (active_num != mp_manager.active_num){
+#ifdef recovery_log
       printf("ACTIVE_NUM changed! There must be recovery session.\n");
+#endif
       mpctx.post_turn = 0;
       return SUCCESS;
     }
@@ -1596,7 +1672,7 @@ inline int mprud_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr, struct i
     mpctx.post_turn = (mpctx.post_turn + 1) % mem_chnk_num;
   }
   return SUCCESS;
-
+#endif
 }
 
 static inline uint32_t mprud_get_outer_poll(int Iam)
@@ -1611,7 +1687,9 @@ static inline uint32_t mprud_get_outer_poll(int Iam)
     for (int i=0; i<active_num; i++){
       if (mpctx.qp_stat[i].polled_rcnt.pkt < wqe->iter_each[i]){
         comp_flag = 0;
+#ifdef MG_DEBUG_MODE
         printf("Need completion on #%d QP, wqe: %d (now: %d --> need: %d)\n",i, mpctx.wqe_table.head, mpctx.qp_stat[i].polled_rcnt.pkt, wqe->iter_each[i]);
+#endif
         break;
       }
     }
@@ -1638,24 +1716,6 @@ static inline uint32_t mprud_get_outer_poll(int Iam)
       for (int i=0; i<active_num; i++){
         mpctx.qp_stat[i].polled_scnt.pkt -= wqe->iter_each[i];
       }
-/*
-      printf("POSTED\n");
-      for(int i=0; i<MPRUD_NUM_PATH; i++){
-        printf("%d  ", mpctx.qp_stat[i].posted_scnt.pkt);
-
-      }
-      printf("\nPOLLED\n");
-
-      for(int i=0; i<MPRUD_NUM_PATH; i++){
-        printf("%d  ", mpctx.qp_stat[i].polled_scnt.pkt);
-      }
-      printf("\nNeeded\n");
-
-      for(int i=0; i<MPRUD_NUM_PATH; i++){
-        printf("%d  ", mpctx.wqe_table.wqe[mpctx.wqe_table.head].iter_each[i]);
-      }
-      printf("\n----------------------------\n");
-*/
     }
   }
 
@@ -1871,7 +1931,6 @@ int mprud_poll_cq_server(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc, int 
         return -1;
 
       case MPRUD_STATUS_FAIL: 
-
         printf("Path failure detected. Start recovery routine.\n");
 
         err = mprud_recovery_routine_server();
@@ -1942,7 +2001,7 @@ int mprud_poll_cq_client(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc, int 
         return -1;
 
       case MPRUD_STATUS_FAIL: 
-#ifdef debugpath
+#ifdef recovery_log 
         printf("Path failure detected. Start recovery routine.\n");
 #endif
 
@@ -1996,8 +2055,17 @@ int mprud_poll_cq_client(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc, int 
 
 int mprud_poll_cq(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc, int skip_outer_poll)
 {
+#ifdef NO_SPLIT_SMALL_MSG 
+  if (mpctx.tot_rposted > 0){
+    return cq->context->ops.poll_cq(mpctx.inner_qps[0]->recv_cq, ne, wc, 1); // Go to original poll_cq
+  }
+  else if (mpctx.tot_sposted > 0){
+    return cq->context->ops.poll_cq(mpctx.inner_qps[0]->send_cq, ne, wc, 1); // Go to original poll_cq
+  }
+#else
+
   int Iam = -1;
-  if (mpctx.tot_rposted > 0){ // send pkt
+  if (mpctx.tot_rposted > 0){
     Iam = MP_SERVER;
 
     return mprud_poll_cq_server(cq, ne, wc, skip_outer_poll);
@@ -2016,6 +2084,8 @@ int mprud_poll_cq(struct ibv_cq *cq, uint32_t ne, struct ibv_wc *wc, int skip_ou
     printf("head: %d   next: %d\n", mpctx.wqe_table.head, mpctx.wqe_table.next);
     return 0;
   }
+
+#endif
 }
 
 int mprud_destroy_inner_qps()
