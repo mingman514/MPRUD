@@ -47,9 +47,9 @@ void print_perf(int ne, uint64_t size)
 
   gettimeofday(&end, NULL);
   float usec = mprud_get_us(start, end);
-  if (usec < 10000)
+  if (usec < 1000000)
+  //if (usec < 5000)
     return ;
-
   printf("%.2f\t%.2f\n", mprud_get_us(initial, end)/1000, (bytes/(double)(1000*1000*1000/8))/(usec/(1000*1000)));
 //  printf("Time: %.2f ms\n", mprud_get_us(initial, end)/1000);
 
@@ -1620,7 +1620,7 @@ int create_single_mr(struct pingpong_context *ctx, struct perftest_parameters *u
 		} else {
       // MPRUD both sender & receiver passes here
 #ifndef USE_MPRUD
-			for (i = 0; i < ctx->buff_size; i++) {
+			for (int i = 0; i < ctx->buff_size; i++) {
 				((char*)ctx->buf[qp_index])[i] = (char)rand();
 			}
 #else
@@ -3973,6 +3973,11 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 				else
 #endif
         ne = ibv_poll_cq(ctx->send_cq, CTX_POLL_BATCH, wc);
+
+#ifdef PERFTEST_PRINT_PERF
+      print_perf(ne, user_param->size);
+#endif
+
         if (ne > 0) {
           for (i = 0; i < ne; i++) {
             wc_id = (user_param->verb_type == ACCL_INTF) ?
@@ -4114,6 +4119,11 @@ int run_iter_bw_server(struct pingpong_context *ctx, struct perftest_parameters 
 			#ifdef HAVE_ACCL_VERBS
 			}
 			#endif
+
+#ifdef PERFTEST_PRINT_PERF
+      print_perf(ne, user_param->size);
+#endif
+
 			if (ne > 0) {
         //printf("[Outer poll] ne: %d   cq_mod: %d\n", ne, user_param->cq_mod);
 				if (firstRx) {

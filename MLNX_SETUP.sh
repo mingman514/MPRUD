@@ -1,6 +1,7 @@
 mlnx_qos -i enp1s0f1 --pfc 0,0,0,1,0,0,0,0
 sleep 2
-mlnx_qos -i enp1s0f1 --buffer_size 30848,230912,0,0,0,0,0,0
+mlnx_qos -i enp1s0f1 --buffer_size 30848,461824,0,0,0,0,0,0
+#mlnx_qos -i enp1s0f1 --buffer_size 30848,230912,0,0,0,0,0,0
 sleep 2
 mlnx_qos -i enp1s0f1 --trust=dscp
 sleep 2

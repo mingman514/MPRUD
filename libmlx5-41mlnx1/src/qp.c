@@ -1555,7 +1555,6 @@ static inline uint16_t calc_roce_udp_sport(uint32_t qpn, uint32_t rqpn)
   
   // change ah to change path. with each ah, different rqpn.
   int base_port = 55558;
-//  printf("return: %d\n",base_port + (rqpn - mpctx.dest_qp_num - 1));
   int turn = rqpn - mpctx.dest_qp_num - 1;
 
   // Based on y201 --> y101 data transmission
@@ -1571,8 +1570,11 @@ static inline uint16_t calc_roce_udp_sport(uint32_t qpn, uint32_t rqpn)
 
     case 3:
       return 55559; // spine 4
+    case 4:
+      return 55563;
   }; 
   printf("Unexpected Remote QPN. Use base port #%d\n", base_port);
+  printf("Remote QPN: %d  turn: %d\n",rqpn, turn);
   return base_port;
   
   #else

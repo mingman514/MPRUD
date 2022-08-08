@@ -402,6 +402,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (user_param.test_method == RUN_ALL) {
+
 		if (user_param.connection_type == UD)
 			size_max_pow =  (int)UD_MSG_2_EXP(MTU_SIZE(user_param.curr_mtu)) + 1;
 
@@ -491,18 +492,15 @@ int main(int argc, char *argv[])
 #endif
 
 		if (user_param.duplex) {
-
 			if(run_iter_bi(&ctx,&user_param))
 				return 17;
 
 		} else if (user_param.machine == CLIENT) {
-
 			if(run_iter_bw(&ctx,&user_param)) {
 				return 17;
 			}
 
 		} else if(run_iter_bw_server(&ctx,&user_param)) {
-
 			return 17;
 		}
 

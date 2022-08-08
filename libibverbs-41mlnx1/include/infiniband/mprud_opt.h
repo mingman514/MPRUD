@@ -17,10 +17,11 @@
   { fprintf(stderr," Cannot Allocate\n"); exit(1);}}
 
 #define USE_MPRUD
-//#define USE_RECOVERY_MODE   // Use recovery mode. If not defined, it will never monitor failure and go for recovery at all.
+#define USE_RECOVERY_MODE   // Use recovery mode. If not defined, it will never monitor failure and go for recovery at all.
 
-#define USE_HASH_SRC_IP   // Use path depending on src IP (src port fix)
-//#define USE_HASH_SRC_PORT   // Use path depending on src PORT (src IP fix)
+/* Need to build libmlx5 */
+//#define USE_HASH_SRC_IP   // Use path depending on src IP (src port fix)
+#define USE_HASH_SRC_PORT   // Use path depending on src PORT (src IP fix)
 
 //#define PRINT_PERF_PER_QP   // Print performance from this mprud
 #define PERFTEST_PRINT_PERF   // Print performance from Perf Test application
@@ -38,7 +39,7 @@
 //#define INTEND_PATH_FAILURE
 
 #ifdef INTEND_PATH_FAILURE
-  #define FAILURE_TIME_ELAPSED 3000000  // us
+  #define FAILURE_TIME_ELAPSED 2000000  // us
   #define FAILURE_PATH (MPRUD_NUM_PATH-1)
   #define FAILURE_LOSS_RATE 1 // %
 #endif

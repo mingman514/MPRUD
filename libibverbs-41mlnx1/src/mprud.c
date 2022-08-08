@@ -48,7 +48,8 @@ static char REMOTE_GIDS[4][50] = {
  * This order can be changed depending upon switch configurations.
  */
 #ifdef USE_HASH_SRC_IP
-static int sgid_index[4] = { 7, 15, 5, 17 };  // set for y201
+//static int sgid_index[4] = { 7, 15, 5, 17 };  // set for y201   --- when ip load-sharing type consistent disabled
+static int sgid_index[4] = { 7, 15, 5, 17 };  // set for y201 --- when ip load-sharing type consistent enabled
 #endif
 
 int mprud_init_ctx()
@@ -1212,6 +1213,9 @@ int mprud_recovery_routine_client()
   printf("completed: %u\n", mp_manager.msg.completed);
   printf("---------------------\n");
 #endif
+  
+  // calculate recovery amount
+  //printf("LOSS: %lu\n",((mpctx.wqe_table.next-1) - (mp_manager.msg.wqe_loss_idx-1) + 1) * 1048576 + mp_manager.msg.completed * mpctx.wqe_table.wqe[mp_manager.msg.wqe_loss_idx].avg_size_per_pkt);
 
   // ACK to Server
   mprud_post_send_ack(mp_manager.report_qp, MP_CLIENT);
